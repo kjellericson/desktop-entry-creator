@@ -5,11 +5,15 @@ import re
 import sys
 import shutil
 import subprocess
+import colorsys
+import hashlib
+import html
+import random
+from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 import tkinter as tk
 
-APP_ICON_PATH = Path(__file__).with_name("desktop-entry-creator-icon.png")
 ICON_DISPLAY_SIZE = 128
 
 
@@ -20,18 +24,14 @@ class DesktopEntryCreatorApp:
         self.root.geometry("980x760")
         self.root.minsize(900, 700)
 
-        self.app_icon_image = None
-        if APP_ICON_PATH.exists():
-            self.app_icon_image = tk.PhotoImage(file=str(APP_ICON_PATH))
-        self.app_icon_display_image = self._fit_image_to_display(
-            self.app_icon_image)
-        if self.app_icon_image is not None:
-            self.root.iconphoto(True, self.app_icon_image)
-        self.display_icon_image = self.app_icon_display_image
+        self.display_icon_image = None
 
         self.variables = {}
         self.tooltip = None
         self._updating_preview = False
+        self.last_desktop_file = None
+        self.pending_generated_icon_svg = None
+        self.pending_generated_icon_spec = None
         self.unknown_lines = []
         self.field_help = {
             "name": "The visible app name that appears in menus, launchers, and app grids. This is the friendly label users see.",
@@ -481,13 +481,11 @@ class DesktopEntryCreatorApp:
             background="white",
         )
         self.icon_canvas.pack(fill="both", expand=True)
-        if self.display_icon_image is not None:
-            self.icon_canvas.create_image(
-                ICON_DISPLAY_SIZE // 2,
-                ICON_DISPLAY_SIZE // 2,
-                image=self.display_icon_image,
-                anchor="center",
-            )
+
+        top_actions = ttk.Frame(header)
+        top_actions.pack(side="left", fill="y")
+        ttk.Button(top_actions, text="Generate icons", command=self._generate_icon_file).pack(
+            anchor="nw", pady=(2, 0))
 
         preview_label = ttk.Label(
             actions_frame, text="Generated desktop entry")
@@ -502,13 +500,15 @@ class DesktopEntryCreatorApp:
         buttons.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 10))
         buttons.columnconfigure(0, weight=1)
         buttons.columnconfigure(1, weight=1)
+        buttons.columnconfigure(2, weight=1)
+        buttons.columnconfigure(3, weight=1)
 
         ttk.Button(buttons, text="Save .desktop", command=self._save_desktop_file).grid(
             row=0, column=0, sticky="ew", padx=(0, 5))
         ttk.Button(buttons, text="Load .desktop", command=self._load_desktop_file).grid(
             row=0, column=1, sticky="ew", padx=(5, 5))
         ttk.Button(buttons, text="Reset", command=self._reset_form).grid(
-            row=0, column=2, sticky="ew", padx=(5, 0))
+            row=0, column=3, sticky="ew", padx=(5, 0))
 
         footer_label = ttk.Label(main, text="kjell@haxx.se")
         footer_label.grid(row=1, column=0, columnspan=2,
@@ -539,7 +539,9 @@ class DesktopEntryCreatorApp:
                 variable.set("")
             elif isinstance(variable, tk.BooleanVar):
                 variable.set(False)
-        self.type_var.set("")
+        self.type_var.set("Application")
+        self.pending_generated_icon_svg = None
+        self.pending_generated_icon_spec = None
         self._refresh_preview()
 
     def _string_value(self, key, fallback=""):
@@ -678,6 +680,13 @@ class DesktopEntryCreatorApp:
         self._update_gui_icon_from_field()
 
     def _update_gui_icon_from_field(self):
+        pending_spec = getattr(self, "pending_generated_icon_spec", None)
+        if pending_spec is not None and hasattr(self, "icon_canvas"):
+            self._draw_icon_preview(
+                self.icon_canvas, pending_spec, ICON_DISPLAY_SIZE)
+            self.display_icon_image = None
+            return
+
         icon_path = self._string_value("icon", "")
         selected_icon = None
         if icon_path:
@@ -688,9 +697,6 @@ class DesktopEntryCreatorApp:
                     selected_icon = self._fit_image_to_display(selected_icon)
                 except tk.TclError:
                     selected_icon = None
-
-        if selected_icon is None:
-            selected_icon = self.app_icon_display_image
 
         self.display_icon_image = selected_icon
 
@@ -703,8 +709,6 @@ class DesktopEntryCreatorApp:
                     image=self.display_icon_image,
                     anchor="center",
                 )
-        if self.display_icon_image is not None and hasattr(self, "root"):
-            self.root.iconphoto(True, self.display_icon_image)
 
     @staticmethod
     def _fit_image_to_display(image):
@@ -735,11 +739,6 @@ class DesktopEntryCreatorApp:
         return "break"
 
     def _save_desktop_file(self):
-        content = self.generate_desktop_entry()
-        validation_error = self._validate_desktop_entry_content(content)
-        if validation_error:
-            messagebox.showerror("Save failed", validation_error)
-            return
         default_dir = os.path.join(os.path.expanduser(
             "~"), ".local", "share", "applications")
         os.makedirs(default_dir, exist_ok=True)
@@ -758,14 +757,453 @@ class DesktopEntryCreatorApp:
         if not output_path.endswith(".desktop"):
             output_path += ".desktop"
 
+        output_path_obj = Path(output_path)
+        pending_icon_spec = getattr(self, "pending_generated_icon_spec", None)
+
         try:
-            Path(output_path).write_text(content, encoding="utf-8")
-            self._refresh_desktop_database(Path(output_path).parent)
-            self._prompt_to_add_application_directory(Path(output_path).parent)
-            messagebox.showinfo(
-                "Saved", f"Desktop entry saved to:\n{output_path}")
+            if pending_icon_spec:
+                icon_path = output_path_obj.with_suffix(".png")
+                self._write_generated_icon_png(pending_icon_spec, icon_path)
+                self.variables["icon"].set(str(icon_path))
+                self.pending_generated_icon_svg = None
+                self.pending_generated_icon_spec = None
+
+            content = self.generate_desktop_entry()
+            validation_error = self._validate_desktop_entry_content(content)
+            if validation_error:
+                messagebox.showerror("Save failed", validation_error)
+                return
+
+            output_path_obj.write_text(content, encoding="utf-8")
+            self.last_desktop_file = output_path
+            self._refresh_desktop_database(output_path_obj.parent)
+            self._prompt_to_add_application_directory(output_path_obj.parent)
+
+            validator_result = self._run_desktop_file_validator(output_path_obj)
+            if isinstance(validator_result, dict):
+                has_errors = bool(validator_result.get("errors"))
+                validator_output = (validator_result.get("output") or "").strip()
+            else:
+                # Backward compatibility for older tests/mocks returning string/None.
+                has_errors = bool(validator_result)
+                validator_output = (validator_result or "").strip()
+
+            if has_errors:
+                messagebox.showerror(
+                    "Saved with validation errors",
+                    f"Desktop entry saved to:\n{output_path}\n\n"
+                    "desktop-file-validator reported:\n"
+                    f"{validator_output or 'Unknown validation error.'}",
+                )
+            else:
+                success_message = f"Desktop entry saved to:\n{output_path}"
+                if validator_output:
+                    success_message += (
+                        "\n\ndesktop-file-validator warnings:\n"
+                        f"{validator_output}"
+                    )
+                messagebox.showinfo(
+                    "Saved", success_message)
         except OSError as exc:
             messagebox.showerror("Save failed", f"Could not save file:\n{exc}")
+
+    @staticmethod
+    def _run_desktop_file_validator(path):
+        try:
+            result = subprocess.run(
+                ["desktop-file-validator", str(path)],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except FileNotFoundError:
+            return {"errors": False, "output": None, "available": False}
+
+        output = (result.stdout or "") + (result.stderr or "")
+        return {
+            "errors": result.returncode != 0,
+            "output": output.strip() or None,
+            "available": True,
+        }
+
+    @staticmethod
+    def _hex_to_rgb(color_value):
+        value = color_value.lstrip("#")
+        if len(value) != 6:
+            raise ValueError(f"Unsupported color value: {color_value}")
+        return tuple(int(value[index:index + 2], 16) for index in (0, 2, 4))
+
+    def _write_generated_icon_png(self, spec, icon_path, size=512):
+        start_rgb = self._hex_to_rgb(spec["bg1"])
+        end_rgb = self._hex_to_rgb(spec["bg2"])
+
+        image = Image.new("RGB", (size, size), start_rgb)
+        pixels = image.load()
+        for y in range(size):
+            for x in range(size):
+                blend = (x + y) / (2 * (size - 1))
+                pixels[x, y] = tuple(
+                    int(start_rgb[channel] * (1.0 - blend) +
+                        end_rgb[channel] * blend)
+                    for channel in range(3)
+                )
+
+        draw = ImageDraw.Draw(image)
+        shape_color = spec["shape_color"]
+        if spec["shape"] == "rounded_rect":
+            draw.rounded_rectangle(
+                (92, 92, 420, 420), radius=84, fill=shape_color)
+        elif spec["shape"] == "circle":
+            draw.ellipse((86, 86, 426, 426), fill=shape_color)
+        else:
+            draw.polygon(self._shape_points(
+                spec["shape"], size), fill=shape_color)
+
+        for line_spec in spec["lines"]:
+            draw.line(
+                (line_spec["x1"], line_spec["y1"],
+                 line_spec["x2"], line_spec["y2"]),
+                fill=spec["line_color"],
+                width=line_spec["w"],
+            )
+
+        for circle_spec in spec["circles"]:
+            cx = circle_spec["cx"]
+            cy = circle_spec["cy"]
+            radius = circle_spec["r"]
+            draw.ellipse(
+                (cx - radius, cy - radius, cx + radius, cy + radius),
+                outline=spec["circle_color"],
+                width=circle_spec["w"],
+            )
+
+        try:
+            font = ImageFont.truetype("DejaVuSans-Bold.ttf", 190)
+        except OSError:
+            font = ImageFont.load_default()
+
+        text = spec["chars"]
+        text_bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+        text_x = (size - text_width) // 2
+        text_y = int(size * 0.57 - text_height / 2)
+        draw.text((text_x, text_y), text, font=font, fill="#ffffff")
+
+        image.save(icon_path, format="PNG")
+
+    @staticmethod
+    def _generated_icon_colors(seed_text):
+        digest = hashlib.sha1(seed_text.encode("utf-8")).hexdigest()
+        hue = int(digest[:8], 16) / 0xFFFFFFFF
+        r1, g1, b1 = colorsys.hsv_to_rgb(hue, 0.55, 0.82)
+        r2, g2, b2 = colorsys.hsv_to_rgb((hue + 0.12) % 1.0, 0.7, 0.95)
+        return (
+            f"#{int(r1 * 255):02x}{int(g1 * 255):02x}{int(b1 * 255):02x}",
+            f"#{int(r2 * 255):02x}{int(g2 * 255):02x}{int(b2 * 255):02x}",
+        )
+
+    @staticmethod
+    def _generated_icon_label(name):
+        words = [token for token in re.split(r"\s+", name.strip()) if token]
+        if len(words) >= 2:
+            return f"{words[0][0]}{words[1][0]}".upper()
+        if words and len(words[0]) >= 2:
+            return words[0][:2].upper()
+        if words:
+            return words[0][:1].upper()
+        return "AP"
+
+    @staticmethod
+    def _rgb_hex(red, green, blue):
+        return f"#{int(red * 255):02x}{int(green * 255):02x}{int(blue * 255):02x}"
+
+    def _generate_icon_specs(self, app_name, count=8):
+        words = [token for token in re.split(
+            r"\s+", app_name.strip()) if token]
+        letters = "".join(ch for ch in app_name.upper()
+                          if ch.isalpha()) or "APP"
+
+        label_pool = []
+        if len(words) >= 2:
+            label_pool.append((words[0][0] + words[1][0]).upper())
+        if len(words) >= 3:
+            label_pool.append(
+                (words[0][0] + words[1][0] + words[2][0]).upper())
+        if len(letters) >= 3:
+            label_pool.extend([letters[:1], letters[:2], letters[:3]])
+        elif len(letters) == 2:
+            label_pool.extend([letters[:1], letters[:2]])
+        else:
+            label_pool.append(letters[:1])
+        label_pool = [value for value in label_pool if value]
+        if not label_pool:
+            label_pool = ["A", "AP", "APP"]
+
+        rng = random.SystemRandom()
+        shape_choices = ["rounded_rect", "circle", "diamond", "hexagon"]
+        specs = []
+        for _ in range(count):
+            hue = rng.random()
+            bg1 = self._rgb_hex(*colorsys.hsv_to_rgb(hue, 0.55, 0.88))
+            bg2 = self._rgb_hex(
+                *colorsys.hsv_to_rgb((hue + 0.18) % 1.0, 0.70, 0.98))
+            shape_color = self._rgb_hex(
+                *colorsys.hsv_to_rgb((hue + 0.50) % 1.0, 0.45, 0.30))
+            line_color = self._rgb_hex(
+                *colorsys.hsv_to_rgb((hue + 0.33) % 1.0, 0.75, 0.94))
+            circle_color = self._rgb_hex(
+                *colorsys.hsv_to_rgb((hue + 0.66) % 1.0, 0.50, 0.98))
+
+            lines = []
+            for _ in range(rng.randint(3, 6)):
+                lines.append({
+                    "x1": rng.randint(50, 460),
+                    "y1": rng.randint(50, 460),
+                    "x2": rng.randint(50, 460),
+                    "y2": rng.randint(50, 460),
+                    "w": rng.randint(4, 12),
+                })
+
+            circles = []
+            for _ in range(rng.randint(2, 5)):
+                circles.append({
+                    "cx": rng.randint(70, 440),
+                    "cy": rng.randint(70, 440),
+                    "r": rng.randint(16, 62),
+                    "w": rng.randint(2, 7),
+                })
+
+            specs.append({
+                "bg1": bg1,
+                "bg2": bg2,
+                "shape": rng.choice(shape_choices),
+                "shape_color": shape_color,
+                "line_color": line_color,
+                "circle_color": circle_color,
+                "lines": lines,
+                "circles": circles,
+                "chars": rng.choice(label_pool),
+            })
+
+        return specs
+
+    @staticmethod
+    def _shape_points(shape_name, size):
+        if shape_name == "diamond":
+            return [
+                (size * 0.5, size * 0.18),
+                (size * 0.82, size * 0.5),
+                (size * 0.5, size * 0.82),
+                (size * 0.18, size * 0.5),
+            ]
+        if shape_name == "hexagon":
+            return [
+                (size * 0.25, size * 0.2),
+                (size * 0.75, size * 0.2),
+                (size * 0.9, size * 0.5),
+                (size * 0.75, size * 0.8),
+                (size * 0.25, size * 0.8),
+                (size * 0.1, size * 0.5),
+            ]
+        return []
+
+    def _draw_icon_preview(self, canvas, spec, size):
+        canvas.delete("all")
+        canvas.create_rectangle(0, 0, size, size, fill=spec["bg1"], outline="")
+
+        shape = spec["shape"]
+        if shape == "rounded_rect":
+            canvas.create_rectangle(size * 0.18, size * 0.18, size * 0.82, size * 0.82,
+                                    fill=spec["shape_color"], outline="")
+        elif shape == "circle":
+            canvas.create_oval(size * 0.2, size * 0.2, size * 0.8, size * 0.8,
+                               fill=spec["shape_color"], outline="")
+        else:
+            points = self._shape_points(shape, size)
+            flat_points = [coord for point in points for coord in point]
+            canvas.create_polygon(
+                *flat_points, fill=spec["shape_color"], outline="")
+
+        for line_spec in spec["lines"]:
+            scale = size / 512.0
+            canvas.create_line(
+                line_spec["x1"] * scale,
+                line_spec["y1"] * scale,
+                line_spec["x2"] * scale,
+                line_spec["y2"] * scale,
+                fill=spec["line_color"],
+                width=max(1, int(line_spec["w"] * scale)),
+            )
+
+        for circle_spec in spec["circles"]:
+            scale = size / 512.0
+            cx = circle_spec["cx"] * scale
+            cy = circle_spec["cy"] * scale
+            r = circle_spec["r"] * scale
+            canvas.create_oval(cx - r, cy - r, cx + r, cy + r,
+                               outline=spec["circle_color"], width=max(1, int(circle_spec["w"] * scale)))
+
+        canvas.create_text(
+            size * 0.5,
+            size * 0.56,
+            text=spec["chars"],
+            fill="#ffffff",
+            font=("Sans", max(16, int(size * 0.26)), "bold"),
+        )
+
+    def _build_generated_icon_svg(self, spec):
+        initials = html.escape(spec["chars"])
+        shape = spec["shape"]
+        shape_fragment = ""
+        if shape == "rounded_rect":
+            shape_fragment = (
+                "  <rect x=\"92\" y=\"92\" width=\"328\" height=\"328\" rx=\"84\" "
+                f"fill=\"{spec['shape_color']}\"/>\n"
+            )
+        elif shape == "circle":
+            shape_fragment = (
+                f"  <circle cx=\"256\" cy=\"256\" r=\"170\" fill=\"{spec['shape_color']}\"/>\n"
+            )
+        else:
+            points = self._shape_points(shape, 512)
+            points_str = " ".join(f"{int(x)},{int(y)}" for x, y in points)
+            shape_fragment = (
+                f"  <polygon points=\"{points_str}\" fill=\"{spec['shape_color']}\"/>\n"
+            )
+
+        line_fragments = []
+        for line_spec in spec["lines"]:
+            line_fragments.append(
+                "  <line"
+                f" x1=\"{line_spec['x1']}\" y1=\"{line_spec['y1']}\""
+                f" x2=\"{line_spec['x2']}\" y2=\"{line_spec['y2']}\""
+                f" stroke=\"{spec['line_color']}\" stroke-width=\"{line_spec['w']}\""
+                " stroke-linecap=\"round\" opacity=\"0.65\"/>\n"
+            )
+
+        circle_fragments = []
+        for circle_spec in spec["circles"]:
+            circle_fragments.append(
+                "  <circle"
+                f" cx=\"{circle_spec['cx']}\" cy=\"{circle_spec['cy']}\" r=\"{circle_spec['r']}\""
+                f" stroke=\"{spec['circle_color']}\" stroke-width=\"{circle_spec['w']}\""
+                " fill=\"none\" opacity=\"0.72\"/>\n"
+            )
+
+        return (
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"512\" height=\"512\" viewBox=\"0 0 512 512\">\n"
+            "  <defs>\n"
+            "    <linearGradient id=\"bg\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\">\n"
+            f"      <stop offset=\"0%\" stop-color=\"{spec['bg1']}\"/>\n"
+            f"      <stop offset=\"100%\" stop-color=\"{spec['bg2']}\"/>\n"
+            "    </linearGradient>\n"
+            "  </defs>\n"
+            "  <rect width=\"512\" height=\"512\" rx=\"96\" fill=\"url(#bg)\"/>\n"
+            f"{shape_fragment}"
+            f"{''.join(line_fragments)}"
+            f"{''.join(circle_fragments)}"
+            "  <text x=\"50%\" y=\"57%\" text-anchor=\"middle\" font-size=\"190\""
+            " font-family=\"Sans\" font-weight=\"700\" fill=\"#ffffff\">"
+            f"{initials}</text>\n"
+            "</svg>\n"
+        )
+
+    def _show_icon_picker_dialog(self, app_name):
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Choose a generated icon")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+
+        selection = {"spec": None}
+
+        def choose(spec):
+            selection["spec"] = spec
+            dialog.destroy()
+
+        container = ttk.Frame(dialog, padding=10)
+        container.grid(row=0, column=0, sticky="nsew")
+
+        slots = []
+        for index in range(8):
+            row = index // 4
+            column = index % 4
+
+            tile = ttk.Frame(container, padding=6)
+            tile.grid(row=row, column=column, padx=6, pady=6)
+
+            canvas = tk.Canvas(tile, width=120, height=120,
+                               highlightthickness=1, highlightbackground="#bdbdbd", background="#ffffff")
+            canvas.grid(row=0, column=0, padx=2, pady=(0, 6))
+
+            button = ttk.Button(tile, text="Use")
+            button.grid(row=1, column=0, sticky="ew")
+            slots.append({"canvas": canvas, "button": button})
+
+        current_specs = []
+
+        def apply_specs(new_specs):
+            current_specs.clear()
+            current_specs.extend(new_specs[:8])
+
+            for idx, slot in enumerate(slots):
+                canvas = slot["canvas"]
+                button = slot["button"]
+                if idx >= len(current_specs):
+                    canvas.delete("all")
+                    button.state(["disabled"])
+                    button.configure(command=lambda: None)
+                    canvas.bind("<Button-1>", lambda _event: None)
+                    continue
+
+                spec = current_specs[idx]
+                self._draw_icon_preview(canvas, spec, 120)
+                button.state(["!disabled"])
+                button.configure(
+                    command=lambda selected=spec: choose(selected))
+                canvas.bind("<Button-1>", lambda _event,
+                            selected=spec: choose(selected))
+
+        def regenerate():
+            apply_specs(self._generate_icon_specs(app_name, count=8))
+
+        regenerate()
+
+        actions = ttk.Frame(dialog, padding=(10, 0, 10, 10))
+        actions.grid(row=1, column=0, sticky="ew")
+        ttk.Button(actions, text="Regenerate 8",
+                   command=regenerate).pack(side="left")
+        ttk.Button(actions, text="Cancel",
+                   command=dialog.destroy).pack(side="right")
+
+        dialog.wait_window()
+        return selection["spec"]
+
+    def _select_generated_icon_svg(self, app_name):
+        if hasattr(self, "root") and self.root is not None:
+            chosen_spec = self._show_icon_picker_dialog(app_name)
+        else:
+            specs = self._generate_icon_specs(app_name, count=8)
+            chosen_spec = specs[0] if specs else None
+
+        if chosen_spec is None:
+            return None
+        self.pending_generated_icon_spec = chosen_spec
+        return self._build_generated_icon_svg(chosen_spec)
+
+    def _generate_icon_file(self):
+        app_name = self._string_value("name", "Application") or "Application"
+        icon_svg = self._select_generated_icon_svg(app_name)
+        if not icon_svg:
+            return
+        self.pending_generated_icon_svg = icon_svg
+        self._update_gui_icon_from_field()
+        messagebox.showinfo(
+            "Icon selected",
+            "Generated icon selected. It will be saved next to the .desktop file when you save.",
+        )
 
     @staticmethod
     def _validate_desktop_entry_content(content):
@@ -848,6 +1286,9 @@ class DesktopEntryCreatorApp:
         self._updating_preview = True
         try:
             self._apply_desktop_entry_text(text)
+            self.last_desktop_file = input_path
+            self.pending_generated_icon_svg = None
+            self.pending_generated_icon_spec = None
         finally:
             self._updating_preview = False
         self._refresh_preview()

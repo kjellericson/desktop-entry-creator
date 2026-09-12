@@ -1,7 +1,9 @@
 import unittest
+import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
+import tkinter as tk
 
 from desktop_entry_creator import DesktopEntryCreatorApp
 
@@ -393,6 +395,7 @@ class DesktopEntryCreatorTests(unittest.TestCase):
             "version": Var("1.0"),
         }
         app.type_var = Var("Application")
+        app.pending_generated_icon_svg = None
 
         with TemporaryDirectory() as temp_dir:
             output_path = Path(temp_dir) / "saved.desktop"
@@ -404,7 +407,295 @@ class DesktopEntryCreatorTests(unittest.TestCase):
                 app._save_desktop_file()
 
             self.assertTrue(output_path.exists())
+            self.assertEqual(app.last_desktop_file, str(output_path))
             refresh_database.assert_called_once_with(Path(temp_dir))
+
+    def test_reset_form_defaults_type_to_application(self):
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
+            app.variables = {
+                "name": tk.StringVar(master=root, value="App Name"),
+                "terminal": tk.BooleanVar(master=root, value=True),
+            }
+            app.type_var = tk.StringVar(master=root, value="Link")
+            app.pending_generated_icon_svg = "<svg/>"
+            app.pending_generated_icon_spec = {"chars": "A"}
+
+            with patch.object(DesktopEntryCreatorApp, "_refresh_preview"):
+                app._reset_form()
+
+            self.assertEqual(app.type_var.get(), "Application")
+            self.assertEqual(app.variables["name"].get(), "")
+            self.assertFalse(app.variables["terminal"].get())
+            self.assertIsNone(app.pending_generated_icon_svg)
+            self.assertIsNone(app.pending_generated_icon_spec)
+        finally:
+            root.destroy()
+
+    def test_reports_validator_errors_after_save(self):
+        class Var:
+            def __init__(self, value=""):
+                self._value = value
+
+            def set(self, value):
+                self._value = value
+
+            def get(self):
+                return self._value
+
+        app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
+        app.variables = {
+            "name": Var("Validated App"),
+            "generic_name": Var("Tool"),
+            "comment": Var("Save test"),
+            "exec": Var("/usr/bin/example"),
+            "icon": Var("example-icon"),
+            "path": Var("/tmp"),
+            "working_dir": Var("/tmp"),
+            "try_exec": Var(""),
+            "startup_wm_class": Var(""),
+            "mime_type": Var(""),
+            "categories": Var("Utility;"),
+            "keywords": Var("save;test"),
+            "terminal": Var(False),
+            "startup_notify": Var(True),
+            "version": Var("1.0"),
+        }
+        app.type_var = Var("Application")
+        app.pending_generated_icon_svg = None
+        app.pending_generated_icon_spec = None
+
+        with TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "validated.desktop"
+            with patch.object(DesktopEntryCreatorApp, "_ask_save_file", return_value=str(output_path)), \
+                    patch("desktop_entry_creator.messagebox.showinfo") as showinfo, \
+                    patch("desktop_entry_creator.messagebox.showerror") as showerror, \
+                    patch("desktop_entry_creator.messagebox.askyesno", return_value=False), \
+                    patch.object(DesktopEntryCreatorApp, "_refresh_desktop_database"), \
+                    patch.object(DesktopEntryCreatorApp, "_run_desktop_file_validator", return_value={
+                        "errors": True,
+                        "output": "invalid key",
+                        "available": True,
+                    }):
+                app._save_desktop_file()
+
+            self.assertTrue(output_path.exists())
+            showinfo.assert_not_called()
+            showerror.assert_called_once()
+            self.assertIn("desktop-file-validator reported", showerror.call_args[0][1])
+
+    def test_run_desktop_file_validator_returns_error_output(self):
+        completed = subprocess.CompletedProcess(
+            args=["desktop-file-validator", "sample.desktop"],
+            returncode=1,
+            stdout="sample.desktop: error: value missing\n",
+            stderr="",
+        )
+
+        with patch("desktop_entry_creator.subprocess.run", return_value=completed):
+            result = DesktopEntryCreatorApp._run_desktop_file_validator(Path("sample.desktop"))
+
+        self.assertEqual(
+            result,
+            {
+                "errors": True,
+                "output": "sample.desktop: error: value missing",
+                "available": True,
+            },
+        )
+
+    def test_run_desktop_file_validator_returns_none_when_tool_missing(self):
+        with patch("desktop_entry_creator.subprocess.run", side_effect=FileNotFoundError):
+            result = DesktopEntryCreatorApp._run_desktop_file_validator(Path("sample.desktop"))
+
+        self.assertEqual(
+            result,
+            {
+                "errors": False,
+                "output": None,
+                "available": False,
+            },
+        )
+
+    def test_shows_validator_warnings_in_success_dialog(self):
+        class Var:
+            def __init__(self, value=""):
+                self._value = value
+
+            def set(self, value):
+                self._value = value
+
+            def get(self):
+                return self._value
+
+        app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
+        app.variables = {
+            "name": Var("Warned App"),
+            "generic_name": Var("Tool"),
+            "comment": Var("Save test"),
+            "exec": Var("/usr/bin/example"),
+            "icon": Var("example-icon"),
+            "path": Var("/tmp"),
+            "working_dir": Var("/tmp"),
+            "try_exec": Var(""),
+            "startup_wm_class": Var(""),
+            "mime_type": Var(""),
+            "categories": Var("Utility;"),
+            "keywords": Var("save;test"),
+            "terminal": Var(False),
+            "startup_notify": Var(True),
+            "version": Var("1.0"),
+        }
+        app.type_var = Var("Application")
+        app.pending_generated_icon_svg = None
+        app.pending_generated_icon_spec = None
+
+        with TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "warned.desktop"
+            with patch.object(DesktopEntryCreatorApp, "_ask_save_file", return_value=str(output_path)), \
+                    patch("desktop_entry_creator.messagebox.showinfo") as showinfo, \
+                    patch("desktop_entry_creator.messagebox.showerror") as showerror, \
+                    patch("desktop_entry_creator.messagebox.askyesno", return_value=False), \
+                    patch.object(DesktopEntryCreatorApp, "_refresh_desktop_database"), \
+                    patch.object(DesktopEntryCreatorApp, "_run_desktop_file_validator", return_value={
+                        "errors": False,
+                        "output": "warn: recommended key missing",
+                        "available": True,
+                    }):
+                app._save_desktop_file()
+
+            showerror.assert_not_called()
+            showinfo.assert_called_once()
+            self.assertIn("desktop-file-validator warnings", showinfo.call_args[0][1])
+            self.assertIn("warn: recommended key missing", showinfo.call_args[0][1])
+
+    def test_generate_icons_sets_pending_svg_without_writing_file(self):
+        class Var:
+            def __init__(self, value=""):
+                self._value = value
+
+            def set(self, value):
+                self._value = value
+
+            def get(self):
+                return self._value
+
+        app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
+        app.variables = {
+            "name": Var("My Demo App"),
+            "icon": Var(""),
+        }
+        app.pending_generated_icon_svg = None
+        app.root = None
+
+        with TemporaryDirectory() as temp_dir:
+            desktop_path = Path(temp_dir) / "my-demo.desktop"
+            with patch.object(DesktopEntryCreatorApp, "_select_generated_icon_svg", return_value="<svg>MD</svg>"), \
+                    patch("desktop_entry_creator.messagebox.showinfo") as showinfo, \
+                    patch("desktop_entry_creator.messagebox.showerror") as showerror:
+                app._generate_icon_file()
+
+            icon_path = desktop_path.with_suffix(".svg")
+            self.assertEqual(app.pending_generated_icon_svg, "<svg>MD</svg>")
+            self.assertEqual(app.variables["icon"].get(), "")
+            self.assertFalse(icon_path.exists())
+            showerror.assert_not_called()
+            showinfo.assert_called_once()
+
+    def test_save_desktop_writes_pending_icon_next_to_desktop_file(self):
+        class Var:
+            def __init__(self, value=""):
+                self._value = value
+
+            def set(self, value):
+                self._value = value
+
+            def get(self):
+                return self._value
+
+        app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
+        app.variables = {
+            "name": Var("Pending Icon App"),
+            "generic_name": Var("Tool"),
+            "comment": Var("Save test"),
+            "exec": Var("/usr/bin/example"),
+            "icon": Var(""),
+            "path": Var("/tmp"),
+            "working_dir": Var("/tmp"),
+            "try_exec": Var(""),
+            "startup_wm_class": Var(""),
+            "mime_type": Var(""),
+            "categories": Var("Utility;"),
+            "keywords": Var("save;icon"),
+            "terminal": Var(False),
+            "startup_notify": Var(True),
+            "version": Var("1.0"),
+        }
+        app.type_var = Var("Application")
+        app.root = None
+        expected_spec = {
+            "bg1": "#101010",
+            "bg2": "#202020",
+            "shape": "diamond",
+            "shape_color": "#333333",
+            "line_color": "#444444",
+            "circle_color": "#555555",
+            "lines": [],
+            "circles": [],
+            "chars": "PI",
+        }
+        app.pending_generated_icon_spec = expected_spec
+        app.pending_generated_icon_svg = "<svg><text>PI</text></svg>"
+
+        with TemporaryDirectory() as temp_dir:
+            desktop_path = Path(temp_dir) / "pending-icon.desktop"
+
+            with patch.object(DesktopEntryCreatorApp, "_ask_save_file", return_value=str(desktop_path)), \
+                    patch("desktop_entry_creator.messagebox.showinfo"), \
+                    patch("desktop_entry_creator.messagebox.showerror"), \
+                    patch("desktop_entry_creator.messagebox.askyesno", return_value=False), \
+                    patch.object(DesktopEntryCreatorApp, "_write_generated_icon_png") as write_png, \
+                    patch.object(DesktopEntryCreatorApp, "_refresh_desktop_database"):
+                app._save_desktop_file()
+
+            icon_path = desktop_path.with_suffix(".png")
+            write_png.assert_called_once_with(expected_spec, icon_path)
+            self.assertEqual(app.variables["icon"].get(), str(icon_path))
+            self.assertIsNone(app.pending_generated_icon_svg)
+            self.assertIsNone(app.pending_generated_icon_spec)
+
+    def test_select_generated_icon_svg_returns_none_on_cancel(self):
+        app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
+        app.root = object()
+
+        with patch.object(DesktopEntryCreatorApp, "_generate_icon_specs", return_value=[{"chars": "AA"}]), \
+                patch.object(DesktopEntryCreatorApp, "_show_icon_picker_dialog", return_value=None):
+            result = app._select_generated_icon_svg("App")
+
+        self.assertIsNone(result)
+
+    def test_select_generated_icon_svg_uses_first_spec_without_root(self):
+        app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
+        app.root = None
+        spec = {
+            "bg1": "#101010",
+            "bg2": "#202020",
+            "shape": "diamond",
+            "shape_color": "#333333",
+            "line_color": "#444444",
+            "circle_color": "#555555",
+            "lines": [],
+            "circles": [],
+            "chars": "AB",
+        }
+
+        with patch.object(DesktopEntryCreatorApp, "_generate_icon_specs", return_value=[spec]):
+            result = app._select_generated_icon_svg("App")
+
+        self.assertIn("<svg", result)
+        self.assertIn(">AB<", result)
 
     def test_prompts_when_saved_outside_standard_application_directory(self):
         app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
@@ -450,13 +741,6 @@ class DesktopEntryCreatorTests(unittest.TestCase):
             def create_image(self, _x, _y, image=None, anchor=None):
                 self.last_image = image
 
-        class FakeRoot:
-            def __init__(self):
-                self.icon = None
-
-            def iconphoto(self, _default, icon):
-                self.icon = icon
-
         class FakeImage:
             def __init__(self, width=256, height=256):
                 self._width = width
@@ -475,11 +759,9 @@ class DesktopEntryCreatorTests(unittest.TestCase):
                 )
 
         app.variables = {"icon": Var("/tmp/icon.png")}
-        app.app_icon_image = object()
-        app.app_icon_display_image = app.app_icon_image
-        app.display_icon_image = app.app_icon_image
+        app.pending_generated_icon_spec = None
+        app.display_icon_image = None
         app.icon_canvas = FakeCanvas()
-        app.root = FakeRoot()
 
         with patch("desktop_entry_creator.Path.is_file", return_value=True), \
                 patch("desktop_entry_creator.tk.PhotoImage", return_value=FakeImage()):
@@ -489,9 +771,8 @@ class DesktopEntryCreatorTests(unittest.TestCase):
         self.assertLessEqual(app.display_icon_image.height(), 128)
         self.assertTrue(app.icon_canvas.deleted)
         self.assertIs(app.icon_canvas.last_image, app.display_icon_image)
-        self.assertIs(app.root.icon, app.display_icon_image)
 
-    def test_falls_back_to_app_icon_when_icon_field_path_missing(self):
+    def test_clears_preview_when_icon_field_path_missing(self):
         app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
 
         class Var:
@@ -512,30 +793,19 @@ class DesktopEntryCreatorTests(unittest.TestCase):
             def create_image(self, _x, _y, image=None, anchor=None):
                 self.last_image = image
 
-        class FakeRoot:
-            def __init__(self):
-                self.icon = None
-
-            def iconphoto(self, _default, icon):
-                self.icon = icon
-
-        fallback_icon = object()
         app.variables = {"icon": Var("/tmp/missing.png")}
-        app.app_icon_image = fallback_icon
-        app.app_icon_display_image = fallback_icon
+        app.pending_generated_icon_spec = None
         app.display_icon_image = None
         app.icon_canvas = FakeCanvas()
-        app.root = FakeRoot()
 
         with patch("desktop_entry_creator.Path.is_file", return_value=False), \
                 patch("desktop_entry_creator.tk.PhotoImage") as photo_image:
             app._update_gui_icon_from_field()
 
         photo_image.assert_not_called()
-        self.assertIs(app.display_icon_image, fallback_icon)
+        self.assertIsNone(app.display_icon_image)
         self.assertTrue(app.icon_canvas.deleted)
-        self.assertIs(app.icon_canvas.last_image, fallback_icon)
-        self.assertIs(app.root.icon, fallback_icon)
+        self.assertIsNone(app.icon_canvas.last_image)
 
 
 if __name__ == "__main__":

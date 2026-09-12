@@ -8,6 +8,7 @@ A small Python GUI app for creating `.desktop` launcher files for Linux desktops
 - Generate a freedesktop-compatible `.desktop` file
 - Preview the generated contents before saving
 - Save the output to any location
+- Generate an icon file with one click and save it next to the chosen `.desktop` file
 - Tested on Ubuntu
 
 ## Run it
