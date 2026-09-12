@@ -137,8 +137,17 @@ class DesktopEntryCreatorApp:
             return str(parent), str(candidate)
         return None, None
 
-    @staticmethod
-    def _run_system_dialog(command):
+    def _run_system_dialog(self, command):
+        root = getattr(self, "root", None)
+        root_was_visible = False
+        if root is not None:
+            try:
+                root_was_visible = root.state() != "withdrawn"
+                if root_was_visible:
+                    root.withdraw()
+            except tk.TclError:
+                root_was_visible = False
+
         try:
             result = subprocess.run(
                 command,
@@ -147,7 +156,22 @@ class DesktopEntryCreatorApp:
                 text=True,
             )
         except OSError:
+            if root is not None and root_was_visible:
+                try:
+                    root.deiconify()
+                    root.lift()
+                    root.focus_force()
+                except tk.TclError:
+                    pass
             return True, None
+        finally:
+            if root is not None and root_was_visible:
+                try:
+                    root.deiconify()
+                    root.lift()
+                    root.focus_force()
+                except tk.TclError:
+                    pass
 
         if result.returncode == 0:
             selected = result.stdout.strip()
@@ -173,13 +197,37 @@ class DesktopEntryCreatorApp:
         if handled:
             return selected
 
-        return filedialog.askopenfilename(
+        return self._run_foreground_dialog(lambda: filedialog.askopenfilename(
             title=title,
             filetypes=filetypes,
             initialdir=initialdir,
             initialfile=Path(initialpath).name if initialpath else None,
             parent=getattr(self, "root", None),
-        )
+        ))
+
+    def _run_foreground_dialog(self, dialog_callable):
+        root = getattr(self, "root", None)
+        if root is None:
+            return dialog_callable()
+
+        previous_topmost = False
+        try:
+            previous_topmost = bool(root.attributes("-topmost"))
+            root.attributes("-topmost", True)
+            root.lift()
+            root.focus_force()
+            root.update_idletasks()
+        except tk.TclError:
+            pass
+
+        try:
+            return dialog_callable()
+        finally:
+            try:
+                root.attributes("-topmost", previous_topmost)
+                root.lift()
+            except tk.TclError:
+                pass
 
     def _ask_directory(self, title, initialdir=None):
         handled, selected = self._ask_directory_system_dialog(
@@ -189,11 +237,11 @@ class DesktopEntryCreatorApp:
         if handled:
             return selected
 
-        return filedialog.askdirectory(
+        return self._run_foreground_dialog(lambda: filedialog.askdirectory(
             title=title,
             initialdir=initialdir,
             parent=getattr(self, "root", None),
-        )
+        ))
 
     def _ask_save_file(self, title, defaultextension, filetypes, initialdir, initialfile):
         handled, selected = self._ask_save_file_system_dialog(
@@ -205,14 +253,14 @@ class DesktopEntryCreatorApp:
         if handled:
             return selected
 
-        return filedialog.asksaveasfilename(
+        return self._run_foreground_dialog(lambda: filedialog.asksaveasfilename(
             title=title,
             defaultextension=defaultextension,
             filetypes=filetypes,
             initialdir=initialdir,
             initialfile=initialfile,
             parent=getattr(self, "root", None),
-        )
+        ))
 
     @staticmethod
     def _format_kdialog_filters(filetypes):
