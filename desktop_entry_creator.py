@@ -9,6 +9,7 @@ from tkinter import filedialog, messagebox, ttk
 import tkinter as tk
 
 APP_ICON_PATH = Path(__file__).with_name("app_icon.png")
+ICON_DISPLAY_SIZE = 128
 
 
 class DesktopEntryCreatorApp:
@@ -21,8 +22,11 @@ class DesktopEntryCreatorApp:
         self.app_icon_image = None
         if APP_ICON_PATH.exists():
             self.app_icon_image = tk.PhotoImage(file=str(APP_ICON_PATH))
+        self.app_icon_display_image = self._fit_image_to_display(
+            self.app_icon_image)
         if self.app_icon_image is not None:
             self.root.iconphoto(True, self.app_icon_image)
+        self.display_icon_image = self.app_icon_display_image
 
         self.variables = {}
         self.tooltip = None
@@ -206,10 +210,26 @@ class DesktopEntryCreatorApp:
 
         header = ttk.Frame(actions_frame)
         header.grid(row=0, column=0, sticky="w", padx=10, pady=(0, 6))
-        if self.app_icon_image is not None:
-            icon_label = tk.Label(
-                header, image=self.app_icon_image, borderwidth=0)
-            icon_label.pack(side="left", padx=(0, 8))
+        icon_frame = ttk.Frame(
+            header, width=ICON_DISPLAY_SIZE, height=ICON_DISPLAY_SIZE)
+        icon_frame.pack(side="left", padx=(0, 10))
+        icon_frame.pack_propagate(False)
+
+        self.icon_canvas = tk.Canvas(
+            icon_frame,
+            width=ICON_DISPLAY_SIZE,
+            height=ICON_DISPLAY_SIZE,
+            highlightthickness=0,
+            background="white",
+        )
+        self.icon_canvas.pack(fill="both", expand=True)
+        if self.display_icon_image is not None:
+            self.icon_canvas.create_image(
+                ICON_DISPLAY_SIZE // 2,
+                ICON_DISPLAY_SIZE // 2,
+                image=self.display_icon_image,
+                anchor="center",
+            )
         title_label = ttk.Label(
             header, text="desktop-entry-creator", font=("TkDefaultFont", 12, "bold"))
         title_label.pack(side="left")
@@ -396,6 +416,60 @@ class DesktopEntryCreatorApp:
         content = self.generate_desktop_entry()
         self.preview.delete("1.0", tk.END)
         self.preview.insert("1.0", content)
+        self._update_gui_icon_from_field()
+
+    def _update_gui_icon_from_field(self):
+        icon_path = self._string_value("icon", "")
+        selected_icon = None
+        if icon_path:
+            candidate = Path(icon_path).expanduser()
+            if candidate.is_file():
+                try:
+                    selected_icon = tk.PhotoImage(file=str(candidate))
+                    selected_icon = self._fit_image_to_display(selected_icon)
+                except tk.TclError:
+                    selected_icon = None
+
+        if selected_icon is None:
+            selected_icon = self.app_icon_display_image
+
+        self.display_icon_image = selected_icon
+
+        if hasattr(self, "icon_canvas"):
+            self.icon_canvas.delete("all")
+            if self.display_icon_image is not None:
+                self.icon_canvas.create_image(
+                    ICON_DISPLAY_SIZE // 2,
+                    ICON_DISPLAY_SIZE // 2,
+                    image=self.display_icon_image,
+                    anchor="center",
+                )
+        if self.display_icon_image is not None and hasattr(self, "root"):
+            self.root.iconphoto(True, self.display_icon_image)
+
+    @staticmethod
+    def _fit_image_to_display(image):
+        if image is None:
+            return None
+        width_getter = getattr(image, "width", None)
+        height_getter = getattr(image, "height", None)
+        if not callable(width_getter) or not callable(height_getter):
+            return image
+
+        width = width_getter()
+        height = height_getter()
+        if width <= ICON_DISPLAY_SIZE and height <= ICON_DISPLAY_SIZE:
+            return image
+
+        factor = max(
+            1,
+            (width + ICON_DISPLAY_SIZE - 1) // ICON_DISPLAY_SIZE,
+            (height + ICON_DISPLAY_SIZE - 1) // ICON_DISPLAY_SIZE,
+        )
+        subsample = getattr(image, "subsample", None)
+        if callable(subsample):
+            return subsample(factor, factor)
+        return image
 
     def _save_desktop_file(self):
         content = self.generate_desktop_entry()

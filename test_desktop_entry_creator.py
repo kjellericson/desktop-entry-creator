@@ -429,6 +429,114 @@ class DesktopEntryCreatorTests(unittest.TestCase):
         askyesno.assert_not_called()
         showinfo.assert_not_called()
 
+    def test_uses_icon_field_file_for_gui_icon_when_file_exists(self):
+        app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
+
+        class Var:
+            def __init__(self, value=""):
+                self._value = value
+
+            def get(self):
+                return self._value
+
+        class FakeCanvas:
+            def __init__(self):
+                self.last_image = None
+                self.deleted = False
+
+            def delete(self, *_):
+                self.deleted = True
+
+            def create_image(self, _x, _y, image=None, anchor=None):
+                self.last_image = image
+
+        class FakeRoot:
+            def __init__(self):
+                self.icon = None
+
+            def iconphoto(self, _default, icon):
+                self.icon = icon
+
+        class FakeImage:
+            def __init__(self, width=256, height=256):
+                self._width = width
+                self._height = height
+
+            def width(self):
+                return self._width
+
+            def height(self):
+                return self._height
+
+            def subsample(self, x_factor, y_factor):
+                return FakeImage(
+                    max(1, self._width // max(1, x_factor)),
+                    max(1, self._height // max(1, y_factor)),
+                )
+
+        app.variables = {"icon": Var("/tmp/icon.png")}
+        app.app_icon_image = object()
+        app.app_icon_display_image = app.app_icon_image
+        app.display_icon_image = app.app_icon_image
+        app.icon_canvas = FakeCanvas()
+        app.root = FakeRoot()
+
+        with patch("desktop_entry_creator.Path.is_file", return_value=True), \
+                patch("desktop_entry_creator.tk.PhotoImage", return_value=FakeImage()):
+            app._update_gui_icon_from_field()
+
+        self.assertLessEqual(app.display_icon_image.width(), 128)
+        self.assertLessEqual(app.display_icon_image.height(), 128)
+        self.assertTrue(app.icon_canvas.deleted)
+        self.assertIs(app.icon_canvas.last_image, app.display_icon_image)
+        self.assertIs(app.root.icon, app.display_icon_image)
+
+    def test_falls_back_to_app_icon_when_icon_field_path_missing(self):
+        app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
+
+        class Var:
+            def __init__(self, value=""):
+                self._value = value
+
+            def get(self):
+                return self._value
+
+        class FakeCanvas:
+            def __init__(self):
+                self.last_image = None
+                self.deleted = False
+
+            def delete(self, *_):
+                self.deleted = True
+
+            def create_image(self, _x, _y, image=None, anchor=None):
+                self.last_image = image
+
+        class FakeRoot:
+            def __init__(self):
+                self.icon = None
+
+            def iconphoto(self, _default, icon):
+                self.icon = icon
+
+        fallback_icon = object()
+        app.variables = {"icon": Var("/tmp/missing.png")}
+        app.app_icon_image = fallback_icon
+        app.app_icon_display_image = fallback_icon
+        app.display_icon_image = None
+        app.icon_canvas = FakeCanvas()
+        app.root = FakeRoot()
+
+        with patch("desktop_entry_creator.Path.is_file", return_value=False), \
+                patch("desktop_entry_creator.tk.PhotoImage") as photo_image:
+            app._update_gui_icon_from_field()
+
+        photo_image.assert_not_called()
+        self.assertIs(app.display_icon_image, fallback_icon)
+        self.assertTrue(app.icon_canvas.deleted)
+        self.assertIs(app.icon_canvas.last_image, fallback_icon)
+        self.assertIs(app.root.icon, fallback_icon)
+
 
 if __name__ == "__main__":
     unittest.main()
