@@ -799,8 +799,6 @@ class DesktopEntryCreatorApp:
         finally:
             self._updating_preview = False
         self._refresh_preview()
-        messagebox.showinfo(
-            "Loaded", f"Desktop entry loaded from:\n{input_path}")
 
     @staticmethod
     def _slugify(value: str) -> str:
