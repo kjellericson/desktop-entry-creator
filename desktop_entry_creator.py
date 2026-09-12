@@ -17,6 +17,7 @@ class DesktopEntryCreatorApp:
 
         self.variables = {}
         self.tooltip = None
+        self._updating_preview = False
         self.field_help = {
             "name": "The name shown in the application launcher.",
             "generic_name": "A short generic label for the app type.",
@@ -86,6 +87,7 @@ class DesktopEntryCreatorApp:
         self._attach_tooltip(label_widget, help_text)
 
         var = tk.StringVar(value=default)
+        var.trace_add("write", lambda *_: self._refresh_preview())
         entry = ttk.Entry(parent, textvariable=var, width=width)
         entry.grid(row=row, column=2, sticky="ew", padx=(0, 10), pady=(8, 4))
 
@@ -101,6 +103,7 @@ class DesktopEntryCreatorApp:
         self._attach_tooltip(question, help_text)
 
         var = tk.BooleanVar(value=default)
+        var.trace_add("write", lambda *_: self._refresh_preview())
         checkbox = ttk.Checkbutton(parent, text=label, variable=var)
         checkbox.grid(row=row, column=1, sticky="w", padx=(0, 10), pady=(8, 4))
         self._attach_tooltip(checkbox, help_text)
@@ -150,6 +153,7 @@ class DesktopEntryCreatorApp:
         ttk.Label(form, text="Type:").grid(row=15, column=1,
                                            sticky="w", padx=(0, 8), pady=(8, 4))
         self.type_var = tk.StringVar(value="Application")
+        self.type_var.trace_add("write", lambda *_: self._refresh_preview())
         ttk.Combobox(
             dropdown_frame,
             textvariable=self.type_var,
@@ -176,14 +180,13 @@ class DesktopEntryCreatorApp:
         buttons.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
         buttons.columnconfigure(0, weight=1)
         buttons.columnconfigure(1, weight=1)
-        buttons.columnconfigure(2, weight=1)
 
-        ttk.Button(buttons, text="Generate", command=self._refresh_preview).grid(
-            row=0, column=0, sticky="ew", padx=(0, 5))
         ttk.Button(buttons, text="Save .desktop", command=self._save_desktop_file).grid(
-            row=0, column=1, sticky="ew", padx=5)
+            row=0, column=0, sticky="ew", padx=(0, 5))
         ttk.Button(buttons, text="Reset", command=self._reset_form).grid(
-            row=0, column=2, sticky="ew", padx=(5, 0))
+            row=0, column=1, sticky="ew", padx=(5, 0))
+
+        self.preview.bind("<KeyRelease>", self._on_preview_edit)
 
     def _seed_example(self):
         self.variables["name"].set("Example App")
@@ -264,7 +267,61 @@ class DesktopEntryCreatorApp:
 
         return "\n".join(lines) + "\n"
 
+    def _apply_desktop_entry_text(self, text):
+        entries = {}
+        for line in text.splitlines():
+            if not line or line.startswith("#") or line.startswith(";"):
+                continue
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            entries[key.strip()] = value.strip()
+
+        if "Type" in entries:
+            self.type_var.set(entries["Type"])
+
+        remap = {
+            "Name": "name",
+            "GenericName": "generic_name",
+            "Comment": "comment",
+            "Exec": "exec",
+            "Icon": "icon",
+            "Path": "path",
+            "WorkingDirectory": "working_dir",
+            "TryExec": "try_exec",
+            "StartupWMClass": "startup_wm_class",
+            "MimeType": "mime_type",
+            "Categories": "categories",
+            "Keywords": "keywords",
+            "Version": "version",
+            "Terminal": "terminal",
+            "StartupNotify": "startup_notify",
+        }
+
+        for key, mapped_key in remap.items():
+            if key not in entries:
+                continue
+            value = entries[key]
+            if mapped_key in self.variables:
+                variable = self.variables[mapped_key]
+                if mapped_key in {"terminal", "startup_notify"}:
+                    variable.set(value.lower() == "true")
+                else:
+                    variable.set(value)
+
+    def _on_preview_edit(self, event=None):
+        text = self.preview.get("1.0", tk.END).strip()
+        if not text:
+            return
+        self._updating_preview = True
+        try:
+            self._apply_desktop_entry_text(text)
+        finally:
+            self._updating_preview = False
+
     def _refresh_preview(self):
+        if self._updating_preview:
+            return
         content = self.generate_desktop_entry()
         self.preview.delete("1.0", tk.END)
         self.preview.insert("1.0", content)
