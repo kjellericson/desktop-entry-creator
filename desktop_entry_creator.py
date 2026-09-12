@@ -19,22 +19,22 @@ class DesktopEntryCreatorApp:
         self.tooltip = None
         self._updating_preview = False
         self.field_help = {
-            "name": "The name shown in the application launcher.",
-            "generic_name": "A short generic label for the app type.",
-            "comment": "A one-line description shown by the desktop environment.",
-            "exec": "The command to run when launching the app.",
-            "icon": "The icon name or full path to use for the launcher.",
-            "path": "The working directory for the application as a filesystem path.",
-            "working_dir": "The directory the app should run from when launched.",
-            "categories": "Semicolon-separated desktop categories such as Utility;Development;.",
-            "keywords": "Search keywords separated by semicolons.",
-            "startup_wm_class": "WM_CLASS value used to group the app window.",
-            "mime_type": "MIME types the app can open, if applicable.",
-            "try_exec": "Optional executable that must exist before launch.",
-            "version": "Version string for the launcher metadata.",
-            "terminal": "Open the program in a terminal window instead of the desktop session.",
-            "startup_notify": "Ask the desktop environment to show launch feedback.",
-            "type": "Desktop entry type: Application, Link, or Directory.",
+            "name": "The visible app name that appears in menus, launchers, and app grids. This is the friendly label users see.",
+            "generic_name": "A generic label for the app category, such as 'Text Editor' or 'Browser'. It helps desktop search and grouping.",
+            "comment": "A short description shown by the desktop environment when you hover over the app or view details.",
+            "exec": "The exact command that launches the program. This is the most important field: it tells the desktop what to run.",
+            "icon": "The icon displayed for the launcher. Use an icon name from the system theme or a full file path to a PNG/SVG icon.",
+            "path": "The startup path or working directory the app should use as a filesystem location. Useful for apps that expect to run from a specific folder.",
+            "working_dir": "The directory from which the command should start. This is useful for apps that read local files or expect a certain base folder.",
+            "categories": "Semicolon-separated categories like Utility;Development;Game; to help the desktop organize and filter the app.",
+            "keywords": "Additional search keywords separated by semicolons so users can find the app through launcher search.",
+            "startup_wm_class": "The window manager class used to identify the app's main window. Often used for window rules and matching.",
+            "mime_type": "The MIME types this app can open, if it is a file-association application such as an editor or viewer.",
+            "try_exec": "Optional path to a binary that must exist before launch. If it is missing, the desktop won't launch the app.",
+            "version": "The launcher version string. This helps identify the desktop entry metadata, not usually the program version itself.",
+            "terminal": "Runs the command in a terminal window instead of as a background GUI app. Use this for console programs or debugging.",
+            "startup_notify": "Tells the desktop environment to show launch feedback such as a splash or progress animation while the app starts.",
+            "type": "The desktop entry type: Application launches a program, Link points to a URL or file, and Directory represents a folder entry.",
         }
         self._build_ui()
         self._seed_example()
