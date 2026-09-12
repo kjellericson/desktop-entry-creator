@@ -229,8 +229,10 @@ class DesktopEntryCreatorApp:
 
         ttk.Button(buttons, text="Save .desktop", command=self._save_desktop_file).grid(
             row=0, column=0, sticky="ew", padx=(0, 5))
+        ttk.Button(buttons, text="Load .desktop", command=self._load_desktop_file).grid(
+            row=0, column=1, sticky="ew", padx=(5, 5))
         ttk.Button(buttons, text="Reset", command=self._reset_form).grid(
-            row=0, column=1, sticky="ew", padx=(5, 0))
+            row=0, column=2, sticky="ew", padx=(5, 0))
 
         self.preview.bind("<KeyRelease>", self._on_preview_edit)
 
@@ -409,6 +411,33 @@ class DesktopEntryCreatorApp:
                 "Saved", f"Desktop entry saved to:\n{output_path}")
         except OSError as exc:
             messagebox.showerror("Save failed", f"Could not save file:\n{exc}")
+
+    def _load_desktop_file(self):
+        input_path = filedialog.askopenfilename(
+            title="Choose existing .desktop file",
+            filetypes=[("Desktop Entry Files", "*.desktop"),
+                       ("All Files", "*.*")],
+            initialdir=os.path.join(os.path.expanduser(
+                "~"), ".local", "share", "applications"),
+        )
+
+        if not input_path:
+            return
+
+        try:
+            text = Path(input_path).read_text(encoding="utf-8")
+        except OSError as exc:
+            messagebox.showerror("Load failed", f"Could not open file:\n{exc}")
+            return
+
+        self._updating_preview = True
+        try:
+            self._apply_desktop_entry_text(text)
+        finally:
+            self._updating_preview = False
+        self._refresh_preview()
+        messagebox.showinfo(
+            "Loaded", f"Desktop entry loaded from:\n{input_path}")
 
     @staticmethod
     def _slugify(value: str) -> str:

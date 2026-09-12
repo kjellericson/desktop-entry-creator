@@ -1,4 +1,7 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from desktop_entry_creator import DesktopEntryCreatorApp
 
@@ -161,6 +164,62 @@ class DesktopEntryCreatorTests(unittest.TestCase):
 
         self.assertIn("X-Custom-Flag=true", result)
         self.assertIn("X-GNOME-FullName=My Demo App", result)
+
+    def test_loads_existing_desktop_file_into_form(self):
+        class Var:
+            def __init__(self, value=""):
+                self._value = value
+
+            def set(self, value):
+                self._value = value
+
+            def get(self):
+                return self._value
+
+        app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
+        app.variables = {
+            "name": Var(),
+            "generic_name": Var(),
+            "comment": Var(),
+            "exec": Var(),
+            "icon": Var(),
+            "path": Var(),
+            "working_dir": Var(),
+            "try_exec": Var(),
+            "startup_wm_class": Var(),
+            "mime_type": Var(),
+            "categories": Var(),
+            "keywords": Var(),
+            "terminal": Var(False),
+            "startup_notify": Var(True),
+            "version": Var(),
+        }
+        app.type_var = Var("Application")
+        app._updating_preview = False
+        app.preview = type("Preview", (), {
+            "delete": lambda self, *args: None,
+            "insert": lambda self, *args: None,
+        })()
+
+        with TemporaryDirectory() as temp_dir:
+            desktop_path = Path(temp_dir) / "sample.desktop"
+            desktop_path.write_text(
+                """[Desktop Entry]\nVersion=3.1\nType=Link\nName=Loaded App\nExec=/usr/bin/example\nIcon=example-icon\nTerminal=true\nStartupNotify=false\n""",
+                encoding="utf-8",
+            )
+
+            with patch("desktop_entry_creator.filedialog.askopenfilename", return_value=str(desktop_path)), \
+                    patch("desktop_entry_creator.messagebox.showinfo"), \
+                    patch("desktop_entry_creator.messagebox.showerror"), \
+                    patch.object(DesktopEntryCreatorApp, "_refresh_preview"):
+                app._load_desktop_file()
+
+        self.assertEqual(app.type_var.get(), "Link")
+        self.assertEqual(app.variables["name"].get(), "Loaded App")
+        self.assertEqual(app.variables["exec"].get(), "/usr/bin/example")
+        self.assertEqual(app.variables["icon"].get(), "example-icon")
+        self.assertTrue(app.variables["terminal"].get())
+        self.assertFalse(app.variables["startup_notify"].get())
 
 
 if __name__ == "__main__":
