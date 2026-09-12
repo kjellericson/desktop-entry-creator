@@ -134,6 +134,34 @@ class DesktopEntryCreatorTests(unittest.TestCase):
         self.assertEqual(app.preview.insert_calls, 0)
         self.assertEqual(app.variables["name"].get(), "My App")
 
+    def test_preserves_unknown_lines_in_generated_output(self):
+        app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
+        app.variables = {
+            "name": type("Var", (), {"get": lambda self: "Demo App"})(),
+            "generic_name": type("Var", (), {"get": lambda self: "Editor"})(),
+            "comment": type("Var", (), {"get": lambda self: "Demo application"})(),
+            "exec": type("Var", (), {"get": lambda self: "/usr/bin/true"})(),
+            "icon": type("Var", (), {"get": lambda self: "demo-icon"})(),
+            "path": type("Var", (), {"get": lambda self: "/tmp/demo"})(),
+            "working_dir": type("Var", (), {"get": lambda self: "/tmp/work"})(),
+            "try_exec": type("Var", (), {"get": lambda self: "/usr/bin/true"})(),
+            "startup_wm_class": type("Var", (), {"get": lambda self: "Demo"})(),
+            "mime_type": type("Var", (), {"get": lambda self: "text/plain"})(),
+            "categories": type("Var", (), {"get": lambda self: "Utility;TextEditor;"})(),
+            "keywords": type("Var", (), {"get": lambda self: "app;demo"})(),
+            "terminal": type("Var", (), {"get": lambda self: False})(),
+            "startup_notify": type("Var", (), {"get": lambda self: True})(),
+            "version": type("Var", (), {"get": lambda self: "1.2"})(),
+        }
+        app.type_var = type("Var", (), {"get": lambda self: "Application"})()
+        app.unknown_lines = ["X-Custom-Flag=true",
+                             "X-GNOME-FullName=My Demo App"]
+
+        result = app.generate_desktop_entry()
+
+        self.assertIn("X-Custom-Flag=true", result)
+        self.assertIn("X-GNOME-FullName=My Demo App", result)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -18,6 +18,7 @@ class DesktopEntryCreatorApp:
         self.variables = {}
         self.tooltip = None
         self._updating_preview = False
+        self.unknown_lines = []
         self.field_help = {
             "name": "The visible app name that appears in menus, launchers, and app grids. This is the friendly label users see.",
             "generic_name": "A generic label for the app category, such as 'Text Editor' or 'Browser'. It helps desktop search and grouping.",
@@ -292,21 +293,15 @@ class DesktopEntryCreatorApp:
             f"StartupNotify={startup_notify}",
         ])
 
+        unknown_lines = getattr(self, "unknown_lines", [])
+        if unknown_lines:
+            lines.extend(unknown_lines)
+
         return "\n".join(lines) + "\n"
 
     def _apply_desktop_entry_text(self, text):
         entries = {}
-        for line in text.splitlines():
-            if not line or line.startswith("#") or line.startswith(";"):
-                continue
-            if "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            entries[key.strip()] = value.strip()
-
-        if "Type" in entries:
-            self.type_var.set(entries["Type"])
-
+        self.unknown_lines = []
         remap = {
             "Name": "name",
             "GenericName": "generic_name",
@@ -324,6 +319,23 @@ class DesktopEntryCreatorApp:
             "Terminal": "terminal",
             "StartupNotify": "startup_notify",
         }
+
+        for line in text.splitlines():
+            if not line or line.startswith("#") or line.startswith(";"):
+                continue
+            if "=" not in line:
+                self.unknown_lines.append(line)
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            if key == "Type":
+                self.type_var.set(value)
+                continue
+            if key in remap:
+                entries[key] = value
+            else:
+                self.unknown_lines.append(line)
 
         for key, mapped_key in remap.items():
             if key not in entries:
