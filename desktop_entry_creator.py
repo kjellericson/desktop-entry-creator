@@ -73,7 +73,27 @@ class DesktopEntryCreatorApp:
         widget.bind("<Enter>", lambda event: self._show_tooltip(event, text))
         widget.bind("<Leave>", self._hide_tooltip)
 
-    def _add_field(self, parent, row, label, key, default="", width=36):
+    def _select_field_path(self, var, kind):
+        if kind == "directory":
+            value = filedialog.askdirectory(title="Select directory")
+        elif kind == "icon":
+            value = filedialog.askopenfilename(
+                title="Select icon file",
+                filetypes=[
+                    ("Image Files", "*.png *.jpg *.jpeg *.gif *.svg *.xpm *.ico"),
+                    ("All Files", "*.*"),
+                ],
+            )
+        else:
+            value = filedialog.askopenfilename(
+                title="Select file",
+                filetypes=[("All Files", "*.*")],
+            )
+
+        if value:
+            var.set(value)
+
+    def _add_field(self, parent, row, label, key, default="", width=36, chooser=None):
         help_text = self.field_help.get(key, "Information about this field.")
 
         question = ttk.Label(parent, text="?", foreground="#2b6cb0",
@@ -90,6 +110,12 @@ class DesktopEntryCreatorApp:
         var.trace_add("write", lambda *_: self._refresh_preview())
         entry = ttk.Entry(parent, textvariable=var, width=width)
         entry.grid(row=row, column=2, sticky="ew", padx=(0, 10), pady=(8, 4))
+
+        if chooser:
+            button = ttk.Button(
+                parent, text="Browse", command=lambda: self._select_field_path(var, chooser))
+            button.grid(row=row, column=3, sticky="w",
+                        padx=(0, 10), pady=(8, 4))
 
         self.variables[key] = var
         return var
@@ -125,18 +151,19 @@ class DesktopEntryCreatorApp:
         self._add_field(form, 2, "Comment", "comment",
                         "Launch the application")
         self._add_field(form, 3, "Exec", "exec",
-                        "/usr/bin/firefox --new-window")
+                        "/usr/bin/firefox --new-window", chooser="file")
         self._add_field(form, 4, "Icon", "icon",
-                        "/usr/share/icons/hicolor/256x256/apps/firefox.png")
-        self._add_field(form, 5, "Path", "path", "/home/your-user")
+                        "/usr/share/icons/hicolor/256x256/apps/firefox.png", chooser="icon")
+        self._add_field(form, 5, "Path", "path",
+                        "/home/your-user", chooser="directory")
         self._add_field(form, 6, "Working Directory",
-                        "working_dir", os.getcwd())
+                        "working_dir", os.getcwd(), chooser="directory")
         self._add_field(form, 7, "Categories", "categories",
                         "Utility;Development;")
         self._add_field(form, 8, "Keywords", "keywords", "app;desktop;utility")
         self._add_field(form, 9, "Startup WM Class", "startup_wm_class", "")
         self._add_field(form, 10, "Mime Type", "mime_type", "")
-        self._add_field(form, 11, "Try Exec", "try_exec", "")
+        self._add_field(form, 11, "Try Exec", "try_exec", "", chooser="file")
         self._add_field(form, 12, "Version", "version", "1.0")
         self._add_checkbox(form, 13, "Run in terminal", "terminal", False)
         self._add_checkbox(form, 14, "Startup Notify", "startup_notify", True)
