@@ -35,7 +35,7 @@ class DesktopEntryCreatorTests(unittest.TestCase):
         self.assertIn("Name=Demo App", result)
         self.assertIn("Type=Application", result)
         self.assertIn("Path=/tmp/demo", result)
-        self.assertIn("WorkingDirectory=/tmp/work", result)
+        self.assertIn("X-WorkingDirectory=/tmp/work", result)
         self.assertIn("Terminal=false", result)
         self.assertIn("StartupNotify=true", result)
         self.assertEqual(result.count("Path="), 1)
@@ -71,7 +71,7 @@ class DesktopEntryCreatorTests(unittest.TestCase):
         }
         app.type_var = Var("Application")
         app._apply_desktop_entry_text(
-            """[Desktop Entry]\nVersion=2.0\nType=Link\nName=My New App\nExec=/usr/bin/myapp\nIcon=myapp\nPath=/opt/myapp\nWorkingDirectory=/var/lib/myapp\nTerminal=true\nStartupNotify=false\n""")
+            """[Desktop Entry]\nVersion=2.0\nType=Link\nName=My New App\nExec=/usr/bin/myapp\nIcon=myapp\nPath=/opt/myapp\nX-WorkingDirectory=/var/lib/myapp\nTerminal=true\nStartupNotify=false\n""")
 
         self.assertEqual(app.variables["name"].get(), "My New App")
         self.assertEqual(app.variables["exec"].get(), "/usr/bin/myapp")
@@ -80,6 +80,43 @@ class DesktopEntryCreatorTests(unittest.TestCase):
         self.assertEqual(app.type_var.get(), "Link")
         self.assertEqual(app.variables["terminal"].get(), True)
         self.assertEqual(app.variables["startup_notify"].get(), False)
+
+    def test_loads_x_working_directory_from_desktop_file(self):
+        class Var:
+            def __init__(self, value=""):
+                self._value = value
+
+            def set(self, value):
+                self._value = value
+
+            def get(self):
+                return self._value
+
+        app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
+        app.variables = {
+            "name": Var(),
+            "generic_name": Var(),
+            "comment": Var(),
+            "exec": Var(),
+            "icon": Var(),
+            "path": Var(),
+            "working_dir": Var(),
+            "try_exec": Var(),
+            "startup_wm_class": Var(),
+            "mime_type": Var(),
+            "categories": Var(),
+            "keywords": Var(),
+            "terminal": Var(False),
+            "startup_notify": Var(True),
+            "version": Var(),
+        }
+        app.type_var = Var("Application")
+
+        app._apply_desktop_entry_text(
+            """[Desktop Entry]\nVersion=1.0\nType=Application\nX-WorkingDirectory=/var/lib/example\n""")
+
+        self.assertEqual(
+            app.variables["working_dir"].get(), "/var/lib/example")
 
     def test_preview_edit_does_not_refresh_preview(self):
         class Var:
@@ -221,6 +258,111 @@ class DesktopEntryCreatorTests(unittest.TestCase):
         self.assertTrue(app.variables["terminal"].get())
         self.assertFalse(app.variables["startup_notify"].get())
 
+    def test_loads_lowercase_keys_without_round_trip_duplicates(self):
+        class Var:
+            def __init__(self, value=""):
+                self._value = value
+
+            def set(self, value):
+                self._value = value
+
+            def get(self):
+                return self._value
+
+        app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
+        app.variables = {
+            "name": Var(),
+            "generic_name": Var(),
+            "comment": Var(),
+            "exec": Var(),
+            "icon": Var(),
+            "path": Var(),
+            "working_dir": Var(),
+            "try_exec": Var(),
+            "startup_wm_class": Var(),
+            "mime_type": Var(),
+            "categories": Var(),
+            "keywords": Var(),
+            "terminal": Var(False),
+            "startup_notify": Var(True),
+            "version": Var(),
+        }
+        app.type_var = Var("Application")
+        app._updating_preview = False
+        app.preview = type("Preview", (), {
+            "delete": lambda self, *args: None,
+            "insert": lambda self, *args: None,
+        })()
+
+        app._apply_desktop_entry_text(
+            """[Desktop Entry]\nversion=4.0\ntype=application\nname=Lowercase App\nexec=/usr/bin/example\nterminal=true\nstartupnotify=false\nX-Custom=first\nx-custom=second\n""")
+
+        result = app.generate_desktop_entry()
+
+        self.assertEqual(app.type_var.get(), "application")
+        self.assertEqual(app.variables["name"].get(), "Lowercase App")
+        self.assertIn("Name=Lowercase App", result)
+        self.assertEqual(result.count("Name="), 1)
+        self.assertEqual(result.count("x-custom=second"), 1)
+        self.assertNotIn("X-Custom=first", result)
+        self.assertNotIn("x-custom=first", result)
+
+    def test_ignores_section_header_when_loading_desktop_file(self):
+        class Var:
+            def __init__(self, value=""):
+                self._value = value
+
+            def set(self, value):
+                self._value = value
+
+            def get(self):
+                return self._value
+
+        app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
+        app.variables = {
+            "name": Var(),
+            "generic_name": Var(),
+            "comment": Var(),
+            "exec": Var(),
+            "icon": Var(),
+            "path": Var(),
+            "working_dir": Var(),
+            "try_exec": Var(),
+            "startup_wm_class": Var(),
+            "mime_type": Var(),
+            "categories": Var(),
+            "keywords": Var(),
+            "terminal": Var(False),
+            "startup_notify": Var(True),
+            "version": Var(),
+        }
+        app.type_var = Var("Application")
+
+        app._apply_desktop_entry_text(
+            """[Desktop Entry]\nVersion=1.0\nType=Application\nName=Header Test\n""")
+
+        self.assertEqual(app.unknown_lines, [])
+        self.assertEqual(
+            app.generate_desktop_entry().count("[Desktop Entry]"), 1)
+
+    def test_validates_duplicate_headers_before_save(self):
+        validation_error = DesktopEntryCreatorApp._validate_desktop_entry_content(
+            """[Desktop Entry]\nVersion=1.0\n[Desktop Entry]\nName=Demo\n""")
+
+        self.assertEqual(
+            validation_error,
+            "The desktop entry contains duplicate [Desktop Entry] headers.",
+        )
+
+    def test_validates_duplicate_keys_before_save(self):
+        validation_error = DesktopEntryCreatorApp._validate_desktop_entry_content(
+            """[Desktop Entry]\nVersion=1.0\nName=Demo\nname=Duplicate\n""")
+
+        self.assertEqual(
+            validation_error,
+            "The desktop entry contains a duplicate key: name.",
+        )
+
     def test_saves_and_refreshes_desktop_database(self):
         class Var:
             def __init__(self, value=""):
@@ -257,11 +399,35 @@ class DesktopEntryCreatorTests(unittest.TestCase):
             with patch("desktop_entry_creator.filedialog.asksaveasfilename", return_value=str(output_path)), \
                     patch("desktop_entry_creator.messagebox.showinfo"), \
                     patch("desktop_entry_creator.messagebox.showerror"), \
+                    patch("desktop_entry_creator.messagebox.askyesno", return_value=False), \
                     patch.object(DesktopEntryCreatorApp, "_refresh_desktop_database") as refresh_database:
                 app._save_desktop_file()
 
             self.assertTrue(output_path.exists())
             refresh_database.assert_called_once_with(Path(temp_dir))
+
+    def test_prompts_when_saved_outside_standard_application_directory(self):
+        app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
+
+        with TemporaryDirectory() as temp_dir:
+            nonstandard_directory = Path(temp_dir) / "custom"
+            with patch("desktop_entry_creator.messagebox.askyesno", return_value=True) as askyesno, \
+                    patch("desktop_entry_creator.messagebox.showinfo") as showinfo:
+                app._prompt_to_add_application_directory(nonstandard_directory)
+
+        askyesno.assert_called_once()
+        showinfo.assert_called_once()
+
+    def test_does_not_prompt_for_standard_application_directory(self):
+        app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
+
+        with patch("desktop_entry_creator.messagebox.askyesno") as askyesno, \
+                patch("desktop_entry_creator.messagebox.showinfo") as showinfo:
+            app._prompt_to_add_application_directory(
+                Path.home() / ".local/share/applications")
+
+        askyesno.assert_not_called()
+        showinfo.assert_not_called()
 
 
 if __name__ == "__main__":

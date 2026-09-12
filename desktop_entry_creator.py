@@ -296,7 +296,7 @@ class DesktopEntryCreatorApp:
             ("exec", "Exec"),
             ("icon", "Icon"),
             ("path", "Path"),
-            ("working_dir", "WorkingDirectory"),
+            ("working_dir", "X-WorkingDirectory"),
             ("try_exec", "TryExec"),
             ("startup_wm_class", "StartupWMClass"),
             ("mime_type", "MimeType"),
@@ -331,6 +331,7 @@ class DesktopEntryCreatorApp:
             "Icon": "icon",
             "Path": "path",
             "WorkingDirectory": "working_dir",
+            "X-WorkingDirectory": "working_dir",
             "TryExec": "try_exec",
             "StartupWMClass": "startup_wm_class",
             "MimeType": "mime_type",
@@ -340,28 +341,38 @@ class DesktopEntryCreatorApp:
             "Terminal": "terminal",
             "StartupNotify": "startup_notify",
         }
+        remap_by_lower = {key.lower(): value for key, value in remap.items()}
+        unknown_entries = {}
+        unknown_order = []
 
         for line in text.splitlines():
             if not line or line.startswith("#") or line.startswith(";"):
                 continue
+            if line.startswith("[") and line.endswith("]"):
+                continue
             if "=" not in line:
-                self.unknown_lines.append(line)
+                if line not in unknown_order:
+                    unknown_order.append(line)
                 continue
             key, value = line.split("=", 1)
             key = key.strip()
             value = value.strip()
-            if key == "Type":
+            key_lower = key.lower()
+            if key_lower == "type":
                 self.type_var.set(value)
                 continue
-            if key in remap:
-                entries[key] = value
+            if key_lower in remap_by_lower:
+                entries[key_lower] = value
             else:
-                self.unknown_lines.append(line)
+                unknown_entries.pop(key_lower, None)
+                unknown_entries[key_lower] = f"{key}={value}"
 
-        for key, mapped_key in remap.items():
-            if key not in entries:
+        self.unknown_lines = unknown_order + list(unknown_entries.values())
+
+        for key_lower, mapped_key in remap_by_lower.items():
+            if key_lower not in entries:
                 continue
-            value = entries[key]
+            value = entries[key_lower]
             if mapped_key in self.variables:
                 variable = self.variables[mapped_key]
                 if mapped_key in {"terminal", "startup_notify"}:
@@ -388,6 +399,10 @@ class DesktopEntryCreatorApp:
 
     def _save_desktop_file(self):
         content = self.generate_desktop_entry()
+        validation_error = self._validate_desktop_entry_content(content)
+        if validation_error:
+            messagebox.showerror("Save failed", validation_error)
+            return
         default_dir = os.path.join(os.path.expanduser(
             "~"), ".local", "share", "applications")
         os.makedirs(default_dir, exist_ok=True)
@@ -409,10 +424,34 @@ class DesktopEntryCreatorApp:
         try:
             Path(output_path).write_text(content, encoding="utf-8")
             self._refresh_desktop_database(Path(output_path).parent)
+            self._prompt_to_add_application_directory(Path(output_path).parent)
             messagebox.showinfo(
                 "Saved", f"Desktop entry saved to:\n{output_path}")
         except OSError as exc:
             messagebox.showerror("Save failed", f"Could not save file:\n{exc}")
+
+    @staticmethod
+    def _validate_desktop_entry_content(content):
+        lines = [line.strip() for line in content.splitlines() if line.strip()]
+        if not lines or lines[0] != "[Desktop Entry]":
+            return "The desktop entry must start with a single [Desktop Entry] header."
+
+        header_count = sum(1 for line in lines if line == "[Desktop Entry]")
+        if header_count != 1:
+            return "The desktop entry contains duplicate [Desktop Entry] headers."
+
+        seen_keys = set()
+        for line in lines[1:]:
+            if line.startswith("[") and line.endswith("]"):
+                return "The desktop entry contains an unexpected section header."
+            if "=" not in line:
+                continue
+            key = line.split("=", 1)[0].strip().lower()
+            if key in seen_keys:
+                return f"The desktop entry contains a duplicate key: {key}."
+            seen_keys.add(key)
+
+        return None
 
     def _refresh_desktop_database(self, directory):
         try:
@@ -424,6 +463,32 @@ class DesktopEntryCreatorApp:
             )
         except FileNotFoundError:
             pass
+
+    def _prompt_to_add_application_directory(self, directory):
+        directory = Path(directory).resolve()
+        if self._is_standard_application_directory(directory):
+            return
+
+        prompt = (
+            f"The launcher was saved in:\n{directory}\n\n"
+            "That folder is not one of the standard application locations. "
+            "Add this path to your desktop application's launcher list so the "
+            "entry appears in menus and searches?"
+        )
+        if messagebox.askyesno("Add folder to application list?", prompt):
+            messagebox.showinfo(
+                "Add this folder to the application list",
+                f"Add this path to your desktop application's application list:\n{directory}",
+            )
+
+    @staticmethod
+    def _is_standard_application_directory(directory):
+        standard_directories = {
+            Path(os.path.expanduser("~/.local/share/applications")).resolve(),
+            Path("/usr/share/applications").resolve(),
+            Path("/usr/local/share/applications").resolve(),
+        }
+        return Path(directory).resolve() in standard_directories
 
     def _load_desktop_file(self):
         input_path = filedialog.askopenfilename(
