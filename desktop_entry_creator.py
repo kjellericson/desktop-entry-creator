@@ -51,7 +51,7 @@ class DesktopEntryCreatorApp:
             "type": "The desktop entry type: Application launches a program, Link points to a URL or file, and Directory represents a folder entry.",
         }
         self._build_ui()
-        self._seed_example()
+        self._reset_form()
         self._refresh_preview()
 
     def _show_tooltip(self, event, text):
@@ -280,7 +280,7 @@ class DesktopEntryCreatorApp:
                 variable.set("")
             elif isinstance(variable, tk.BooleanVar):
                 variable.set(False)
-        self.type_var.set("Application")
+        self.type_var.set("")
         self._refresh_preview()
 
     def _string_value(self, key, fallback=""):
