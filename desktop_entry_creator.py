@@ -52,6 +52,8 @@ class DesktopEntryCreatorApp:
             "type": "The desktop entry type: Application launches a program, Link points to a URL or file, and Directory represents a folder entry.",
         }
         self._build_ui()
+        self.root.bind("<Control-w>", self._quit_application)
+        self.root.bind("<Control-W>", self._quit_application)
         self._reset_form()
         self._refresh_preview()
 
@@ -375,9 +377,6 @@ class DesktopEntryCreatorApp:
                 image=self.display_icon_image,
                 anchor="center",
             )
-        title_label = ttk.Label(
-            header, text="desktop-entry-creator", font=("TkDefaultFont", 12, "bold"))
-        title_label.pack(side="left")
 
         preview_label = ttk.Label(
             actions_frame, text="Generated desktop entry")
@@ -615,6 +614,10 @@ class DesktopEntryCreatorApp:
         if callable(subsample):
             return subsample(factor, factor)
         return image
+
+    def _quit_application(self, event=None):
+        self.root.destroy()
+        return "break"
 
     def _save_desktop_file(self):
         content = self.generate_desktop_entry()
