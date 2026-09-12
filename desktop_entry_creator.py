@@ -779,10 +779,12 @@ class DesktopEntryCreatorApp:
             self._refresh_desktop_database(output_path_obj.parent)
             self._prompt_to_add_application_directory(output_path_obj.parent)
 
-            validator_result = self._run_desktop_file_validator(output_path_obj)
+            validator_result = self._run_desktop_file_validator(
+                output_path_obj)
             if isinstance(validator_result, dict):
                 has_errors = bool(validator_result.get("errors"))
-                validator_output = (validator_result.get("output") or "").strip()
+                validator_output = (
+                    validator_result.get("output") or "").strip()
             else:
                 # Backward compatibility for older tests/mocks returning string/None.
                 has_errors = bool(validator_result)

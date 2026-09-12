@@ -484,7 +484,8 @@ class DesktopEntryCreatorTests(unittest.TestCase):
             self.assertTrue(output_path.exists())
             showinfo.assert_not_called()
             showerror.assert_called_once()
-            self.assertIn("desktop-file-validator reported", showerror.call_args[0][1])
+            self.assertIn("desktop-file-validator reported",
+                          showerror.call_args[0][1])
 
     def test_run_desktop_file_validator_returns_error_output(self):
         completed = subprocess.CompletedProcess(
@@ -495,7 +496,8 @@ class DesktopEntryCreatorTests(unittest.TestCase):
         )
 
         with patch("desktop_entry_creator.subprocess.run", return_value=completed):
-            result = DesktopEntryCreatorApp._run_desktop_file_validator(Path("sample.desktop"))
+            result = DesktopEntryCreatorApp._run_desktop_file_validator(
+                Path("sample.desktop"))
 
         self.assertEqual(
             result,
@@ -508,7 +510,8 @@ class DesktopEntryCreatorTests(unittest.TestCase):
 
     def test_run_desktop_file_validator_returns_none_when_tool_missing(self):
         with patch("desktop_entry_creator.subprocess.run", side_effect=FileNotFoundError):
-            result = DesktopEntryCreatorApp._run_desktop_file_validator(Path("sample.desktop"))
+            result = DesktopEntryCreatorApp._run_desktop_file_validator(
+                Path("sample.desktop"))
 
         self.assertEqual(
             result,
@@ -568,8 +571,10 @@ class DesktopEntryCreatorTests(unittest.TestCase):
 
             showerror.assert_not_called()
             showinfo.assert_called_once()
-            self.assertIn("desktop-file-validator warnings", showinfo.call_args[0][1])
-            self.assertIn("warn: recommended key missing", showinfo.call_args[0][1])
+            self.assertIn("desktop-file-validator warnings",
+                          showinfo.call_args[0][1])
+            self.assertIn("warn: recommended key missing",
+                          showinfo.call_args[0][1])
 
     def test_generate_icons_sets_pending_svg_without_writing_file(self):
         class Var:
