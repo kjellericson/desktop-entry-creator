@@ -91,8 +91,15 @@ class DesktopEntryCreatorApp:
         widget.bind("<Leave>", self._hide_tooltip)
 
     def _select_field_path(self, var, kind):
+        current_value = var.get().strip()
+        initialdir, initialpath = self._resolve_dialog_initial_path(
+            current_value)
+
         if kind == "directory":
-            value = self._ask_directory(title="Select directory")
+            value = self._ask_directory(
+                title="Select directory",
+                initialdir=initialdir,
+            )
         elif kind == "icon":
             value = self._ask_open_file(
                 title="Select icon file",
@@ -100,15 +107,35 @@ class DesktopEntryCreatorApp:
                     ("Image Files", "*.png *.jpg *.jpeg *.gif *.svg *.xpm *.ico"),
                     ("All Files", "*.*"),
                 ],
+                initialdir=initialdir,
+                initialpath=initialpath,
             )
         else:
             value = self._ask_open_file(
                 title="Select file",
                 filetypes=[("All Files", "*.*")],
+                initialdir=initialdir,
+                initialpath=initialpath,
             )
 
         if value:
             var.set(value)
+
+    @staticmethod
+    def _resolve_dialog_initial_path(value):
+        if not value:
+            return None, None
+
+        candidate = Path(value).expanduser()
+        if candidate.is_dir():
+            return str(candidate), str(candidate)
+        if candidate.is_file():
+            return str(candidate.parent), str(candidate)
+
+        parent = candidate.parent
+        if str(parent) and str(parent) != ".":
+            return str(parent), str(candidate)
+        return None, None
 
     @staticmethod
     def _run_system_dialog(command):
@@ -127,11 +154,21 @@ class DesktopEntryCreatorApp:
             return True, selected or None
         return True, None
 
-    def _ask_open_file(self, title, filetypes, initialdir=None):
+    def _dialog_window_id(self):
+        root = getattr(self, "root", None)
+        if root is None:
+            return None
+        try:
+            return str(root.winfo_id())
+        except tk.TclError:
+            return None
+
+    def _ask_open_file(self, title, filetypes, initialdir=None, initialpath=None):
         handled, selected = self._ask_open_file_system_dialog(
             title=title,
             filetypes=filetypes,
             initialdir=initialdir,
+            initialpath=initialpath,
         )
         if handled:
             return selected
@@ -140,6 +177,8 @@ class DesktopEntryCreatorApp:
             title=title,
             filetypes=filetypes,
             initialdir=initialdir,
+            initialfile=Path(initialpath).name if initialpath else None,
+            parent=getattr(self, "root", None),
         )
 
     def _ask_directory(self, title, initialdir=None):
@@ -150,7 +189,11 @@ class DesktopEntryCreatorApp:
         if handled:
             return selected
 
-        return filedialog.askdirectory(title=title, initialdir=initialdir)
+        return filedialog.askdirectory(
+            title=title,
+            initialdir=initialdir,
+            parent=getattr(self, "root", None),
+        )
 
     def _ask_save_file(self, title, defaultextension, filetypes, initialdir, initialfile):
         handled, selected = self._ask_save_file_system_dialog(
@@ -168,6 +211,7 @@ class DesktopEntryCreatorApp:
             filetypes=filetypes,
             initialdir=initialdir,
             initialfile=initialfile,
+            parent=getattr(self, "root", None),
         )
 
     @staticmethod
@@ -184,46 +228,60 @@ class DesktopEntryCreatorApp:
             filters.append(f"{label} | {pattern}")
         return filters
 
-    def _ask_open_file_system_dialog(self, title, filetypes, initialdir=None):
+    def _ask_open_file_system_dialog(self, title, filetypes, initialdir=None, initialpath=None):
+        window_id = self._dialog_window_id()
         if shutil.which("zenity"):
-            command = ["zenity", "--file-selection", "--title", title]
+            command = ["zenity", "--file-selection",
+                       "--title", title, "--modal"]
+            if window_id:
+                command.extend(["--attach", window_id])
             for file_filter in self._format_zenity_filters(filetypes):
                 command.extend(["--file-filter", file_filter])
-            if initialdir:
+            if initialpath:
+                command.extend(["--filename", initialpath])
+            elif initialdir:
                 command.extend(["--filename", os.path.join(initialdir, "")])
             return self._run_system_dialog(command)
 
         if shutil.which("kdialog"):
-            start_path = initialdir or os.path.expanduser("~")
+            start_path = initialpath or initialdir or os.path.expanduser("~")
             command = [
                 "kdialog",
+                "--title",
+                title,
                 "--getopenfilename",
                 start_path,
                 self._format_kdialog_filters(filetypes),
-                "--title",
-                title,
             ]
+            if window_id:
+                command[1:1] = ["--attach", window_id]
             return self._run_system_dialog(command)
 
         return False, None
 
     def _ask_directory_system_dialog(self, title, initialdir=None):
+        window_id = self._dialog_window_id()
         if shutil.which("zenity"):
             command = ["zenity", "--file-selection",
-                       "--directory", "--title", title]
+                       "--directory", "--title", title, "--modal"]
+            if window_id:
+                command.extend(["--attach", window_id])
             if initialdir:
                 command.extend(["--filename", os.path.join(initialdir, "")])
             return self._run_system_dialog(command)
 
         if shutil.which("kdialog"):
             start_path = initialdir or os.path.expanduser("~")
-            command = ["kdialog", "--getexistingdirectory",
-                       start_path, "--title", title]
+            command = ["kdialog", "--title", title,
+                       "--getexistingdirectory", start_path]
+            if window_id:
+                command[1:1] = ["--attach", window_id]
             return self._run_system_dialog(command)
 
         return False, None
 
     def _ask_save_file_system_dialog(self, title, filetypes, initialdir, initialfile):
+        window_id = self._dialog_window_id()
         if shutil.which("zenity"):
             suggested = os.path.join(initialdir, initialfile)
             command = [
@@ -233,9 +291,12 @@ class DesktopEntryCreatorApp:
                 "--confirm-overwrite",
                 "--title",
                 title,
+                "--modal",
                 "--filename",
                 suggested,
             ]
+            if window_id:
+                command.extend(["--attach", window_id])
             for file_filter in self._format_zenity_filters(filetypes):
                 command.extend(["--file-filter", file_filter])
             return self._run_system_dialog(command)
@@ -244,12 +305,14 @@ class DesktopEntryCreatorApp:
             suggested = os.path.join(initialdir, initialfile)
             command = [
                 "kdialog",
+                "--title",
+                title,
                 "--getsavefilename",
                 suggested,
                 self._format_kdialog_filters(filetypes),
-                "--title",
-                title,
             ]
+            if window_id:
+                command[1:1] = ["--attach", window_id]
             return self._run_system_dialog(command)
 
         return False, None
