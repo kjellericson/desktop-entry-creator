@@ -3,6 +3,7 @@
 import os
 import re
 import sys
+import subprocess
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 import tkinter as tk
@@ -407,10 +408,22 @@ class DesktopEntryCreatorApp:
 
         try:
             Path(output_path).write_text(content, encoding="utf-8")
+            self._refresh_desktop_database(Path(output_path).parent)
             messagebox.showinfo(
                 "Saved", f"Desktop entry saved to:\n{output_path}")
         except OSError as exc:
             messagebox.showerror("Save failed", f"Could not save file:\n{exc}")
+
+    def _refresh_desktop_database(self, directory):
+        try:
+            subprocess.run(
+                ["update-desktop-database", str(directory)],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except FileNotFoundError:
+            pass
 
     def _load_desktop_file(self):
         input_path = filedialog.askopenfilename(

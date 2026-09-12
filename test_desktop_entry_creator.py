@@ -221,6 +221,48 @@ class DesktopEntryCreatorTests(unittest.TestCase):
         self.assertTrue(app.variables["terminal"].get())
         self.assertFalse(app.variables["startup_notify"].get())
 
+    def test_saves_and_refreshes_desktop_database(self):
+        class Var:
+            def __init__(self, value=""):
+                self._value = value
+
+            def set(self, value):
+                self._value = value
+
+            def get(self):
+                return self._value
+
+        app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
+        app.variables = {
+            "name": Var("Saved App"),
+            "generic_name": Var("Tool"),
+            "comment": Var("Save test"),
+            "exec": Var("/usr/bin/example"),
+            "icon": Var("example-icon"),
+            "path": Var("/tmp"),
+            "working_dir": Var("/tmp"),
+            "try_exec": Var(""),
+            "startup_wm_class": Var(""),
+            "mime_type": Var(""),
+            "categories": Var("Utility;"),
+            "keywords": Var("save;test"),
+            "terminal": Var(False),
+            "startup_notify": Var(True),
+            "version": Var("1.0"),
+        }
+        app.type_var = Var("Application")
+
+        with TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "saved.desktop"
+            with patch("desktop_entry_creator.filedialog.asksaveasfilename", return_value=str(output_path)), \
+                    patch("desktop_entry_creator.messagebox.showinfo"), \
+                    patch("desktop_entry_creator.messagebox.showerror"), \
+                    patch.object(DesktopEntryCreatorApp, "_refresh_desktop_database") as refresh_database:
+                app._save_desktop_file()
+
+            self.assertTrue(output_path.exists())
+            refresh_database.assert_called_once_with(Path(temp_dir))
+
 
 if __name__ == "__main__":
     unittest.main()
