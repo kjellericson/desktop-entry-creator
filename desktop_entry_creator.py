@@ -7,6 +7,8 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 import tkinter as tk
 
+APP_ICON_PATH = Path(__file__).with_name("app_icon.png")
+
 
 class DesktopEntryCreatorApp:
     def __init__(self, root: tk.Tk):
@@ -14,6 +16,12 @@ class DesktopEntryCreatorApp:
         self.root.title("desktop-entry-creator")
         self.root.geometry("980x760")
         self.root.minsize(900, 700)
+
+        self.app_icon_image = None
+        if APP_ICON_PATH.exists():
+            self.app_icon_image = tk.PhotoImage(file=str(APP_ICON_PATH))
+        if self.app_icon_image is not None:
+            self.root.iconphoto(True, self.app_icon_image)
 
         self.variables = {}
         self.tooltip = None
@@ -195,17 +203,27 @@ class DesktopEntryCreatorApp:
         actions_frame.columnconfigure(0, weight=1)
         actions_frame.rowconfigure(1, weight=1)
 
+        header = ttk.Frame(actions_frame)
+        header.grid(row=0, column=0, sticky="w", padx=10, pady=(0, 6))
+        if self.app_icon_image is not None:
+            icon_label = tk.Label(
+                header, image=self.app_icon_image, borderwidth=0)
+            icon_label.pack(side="left", padx=(0, 8))
+        title_label = ttk.Label(
+            header, text="desktop-entry-creator", font=("TkDefaultFont", 12, "bold"))
+        title_label.pack(side="left")
+
         preview_label = ttk.Label(
             actions_frame, text="Generated desktop entry")
-        preview_label.grid(row=0, column=0, sticky="w", padx=10, pady=(0, 6))
+        preview_label.grid(row=1, column=0, sticky="w", padx=10, pady=(0, 6))
 
         self.preview = tk.Text(actions_frame, wrap="word",
                                height=28, font=("Monospace", 10))
-        self.preview.grid(row=1, column=0, sticky="nsew",
+        self.preview.grid(row=2, column=0, sticky="nsew",
                           padx=(10, 10), pady=(0, 10))
 
         buttons = ttk.Frame(actions_frame)
-        buttons.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
+        buttons.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 10))
         buttons.columnconfigure(0, weight=1)
         buttons.columnconfigure(1, weight=1)
 
