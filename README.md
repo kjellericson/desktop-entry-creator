@@ -26,3 +26,8 @@ Or create a desktop file for it.
 
 ## Screendump
 ![alt text](screendump.png)
+
+## Development
+It is heavily AI developed, so don't blame me for the code.
+
+It solves my problem with making desktop files.
