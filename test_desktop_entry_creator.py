@@ -245,7 +245,7 @@ class DesktopEntryCreatorTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with patch("desktop_entry_creator.filedialog.askopenfilename", return_value=str(desktop_path)), \
+            with patch.object(DesktopEntryCreatorApp, "_ask_open_file", return_value=str(desktop_path)), \
                     patch("desktop_entry_creator.messagebox.showinfo"), \
                     patch("desktop_entry_creator.messagebox.showerror"), \
                     patch.object(DesktopEntryCreatorApp, "_refresh_preview"):
@@ -396,7 +396,7 @@ class DesktopEntryCreatorTests(unittest.TestCase):
 
         with TemporaryDirectory() as temp_dir:
             output_path = Path(temp_dir) / "saved.desktop"
-            with patch("desktop_entry_creator.filedialog.asksaveasfilename", return_value=str(output_path)), \
+            with patch.object(DesktopEntryCreatorApp, "_ask_save_file", return_value=str(output_path)), \
                     patch("desktop_entry_creator.messagebox.showinfo"), \
                     patch("desktop_entry_creator.messagebox.showerror"), \
                     patch("desktop_entry_creator.messagebox.askyesno", return_value=False), \

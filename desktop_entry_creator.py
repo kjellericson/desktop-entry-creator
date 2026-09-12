@@ -3,6 +3,7 @@
 import os
 import re
 import sys
+import shutil
 import subprocess
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -89,9 +90,9 @@ class DesktopEntryCreatorApp:
 
     def _select_field_path(self, var, kind):
         if kind == "directory":
-            value = filedialog.askdirectory(title="Select directory")
+            value = self._ask_directory(title="Select directory")
         elif kind == "icon":
-            value = filedialog.askopenfilename(
+            value = self._ask_open_file(
                 title="Select icon file",
                 filetypes=[
                     ("Image Files", "*.png *.jpg *.jpeg *.gif *.svg *.xpm *.ico"),
@@ -99,13 +100,157 @@ class DesktopEntryCreatorApp:
                 ],
             )
         else:
-            value = filedialog.askopenfilename(
+            value = self._ask_open_file(
                 title="Select file",
                 filetypes=[("All Files", "*.*")],
             )
 
         if value:
             var.set(value)
+
+    @staticmethod
+    def _run_system_dialog(command):
+        try:
+            result = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except OSError:
+            return True, None
+
+        if result.returncode == 0:
+            selected = result.stdout.strip()
+            return True, selected or None
+        return True, None
+
+    def _ask_open_file(self, title, filetypes, initialdir=None):
+        handled, selected = self._ask_open_file_system_dialog(
+            title=title,
+            filetypes=filetypes,
+            initialdir=initialdir,
+        )
+        if handled:
+            return selected
+
+        return filedialog.askopenfilename(
+            title=title,
+            filetypes=filetypes,
+            initialdir=initialdir,
+        )
+
+    def _ask_directory(self, title, initialdir=None):
+        handled, selected = self._ask_directory_system_dialog(
+            title=title,
+            initialdir=initialdir,
+        )
+        if handled:
+            return selected
+
+        return filedialog.askdirectory(title=title, initialdir=initialdir)
+
+    def _ask_save_file(self, title, defaultextension, filetypes, initialdir, initialfile):
+        handled, selected = self._ask_save_file_system_dialog(
+            title=title,
+            filetypes=filetypes,
+            initialdir=initialdir,
+            initialfile=initialfile,
+        )
+        if handled:
+            return selected
+
+        return filedialog.asksaveasfilename(
+            title=title,
+            defaultextension=defaultextension,
+            filetypes=filetypes,
+            initialdir=initialdir,
+            initialfile=initialfile,
+        )
+
+    @staticmethod
+    def _format_kdialog_filters(filetypes):
+        patterns = []
+        for _label, pattern in filetypes:
+            patterns.extend(part for part in pattern.split() if part)
+        return " ".join(patterns) or "*"
+
+    @staticmethod
+    def _format_zenity_filters(filetypes):
+        filters = []
+        for label, pattern in filetypes:
+            filters.append(f"{label} | {pattern}")
+        return filters
+
+    def _ask_open_file_system_dialog(self, title, filetypes, initialdir=None):
+        if shutil.which("zenity"):
+            command = ["zenity", "--file-selection", "--title", title]
+            for file_filter in self._format_zenity_filters(filetypes):
+                command.extend(["--file-filter", file_filter])
+            if initialdir:
+                command.extend(["--filename", os.path.join(initialdir, "")])
+            return self._run_system_dialog(command)
+
+        if shutil.which("kdialog"):
+            start_path = initialdir or os.path.expanduser("~")
+            command = [
+                "kdialog",
+                "--getopenfilename",
+                start_path,
+                self._format_kdialog_filters(filetypes),
+                "--title",
+                title,
+            ]
+            return self._run_system_dialog(command)
+
+        return False, None
+
+    def _ask_directory_system_dialog(self, title, initialdir=None):
+        if shutil.which("zenity"):
+            command = ["zenity", "--file-selection",
+                       "--directory", "--title", title]
+            if initialdir:
+                command.extend(["--filename", os.path.join(initialdir, "")])
+            return self._run_system_dialog(command)
+
+        if shutil.which("kdialog"):
+            start_path = initialdir or os.path.expanduser("~")
+            command = ["kdialog", "--getexistingdirectory",
+                       start_path, "--title", title]
+            return self._run_system_dialog(command)
+
+        return False, None
+
+    def _ask_save_file_system_dialog(self, title, filetypes, initialdir, initialfile):
+        if shutil.which("zenity"):
+            suggested = os.path.join(initialdir, initialfile)
+            command = [
+                "zenity",
+                "--file-selection",
+                "--save",
+                "--confirm-overwrite",
+                "--title",
+                title,
+                "--filename",
+                suggested,
+            ]
+            for file_filter in self._format_zenity_filters(filetypes):
+                command.extend(["--file-filter", file_filter])
+            return self._run_system_dialog(command)
+
+        if shutil.which("kdialog"):
+            suggested = os.path.join(initialdir, initialfile)
+            command = [
+                "kdialog",
+                "--getsavefilename",
+                suggested,
+                self._format_kdialog_filters(filetypes),
+                "--title",
+                title,
+            ]
+            return self._run_system_dialog(command)
+
+        return False, None
 
     def _add_field(self, parent, row, label, key, default="", width=36, chooser=None):
         help_text = self.field_help.get(key, "Information about this field.")
@@ -480,7 +625,7 @@ class DesktopEntryCreatorApp:
         default_dir = os.path.join(os.path.expanduser(
             "~"), ".local", "share", "applications")
         os.makedirs(default_dir, exist_ok=True)
-        output_path = filedialog.asksaveasfilename(
+        output_path = self._ask_save_file(
             title="Choose location for .desktop file",
             defaultextension=".desktop",
             filetypes=[("Desktop Entry Files", "*.desktop"),
@@ -565,7 +710,7 @@ class DesktopEntryCreatorApp:
         return Path(directory).resolve() in standard_directories
 
     def _load_desktop_file(self):
-        input_path = filedialog.askopenfilename(
+        input_path = self._ask_open_file(
             title="Choose existing .desktop file",
             filetypes=[("Desktop Entry Files", "*.desktop"),
                        ("All Files", "*.*")],
