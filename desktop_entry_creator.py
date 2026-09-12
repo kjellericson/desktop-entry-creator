@@ -16,7 +16,7 @@ ICON_DISPLAY_SIZE = 128
 class DesktopEntryCreatorApp:
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("desktop-entry-creator")
+        self.root.title("Desktop Entry Creator")
         self.root.geometry("980x760")
         self.root.minsize(900, 700)
 
@@ -509,6 +509,10 @@ class DesktopEntryCreatorApp:
             row=0, column=1, sticky="ew", padx=(5, 5))
         ttk.Button(buttons, text="Reset", command=self._reset_form).grid(
             row=0, column=2, sticky="ew", padx=(5, 0))
+
+        footer_label = ttk.Label(main, text="kjell@haxx.se")
+        footer_label.grid(row=1, column=0, columnspan=2,
+                          sticky="e", padx=(0, 4), pady=(4, 0))
 
         self.preview.bind("<KeyRelease>", self._on_preview_edit)
 
