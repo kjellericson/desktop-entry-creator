@@ -328,11 +328,15 @@ class DesktopEntryCreatorApp:
 
     def _save_desktop_file(self):
         content = self.generate_desktop_entry()
+        default_dir = os.path.join(os.path.expanduser(
+            "~"), ".local", "share", "applications")
+        os.makedirs(default_dir, exist_ok=True)
         output_path = filedialog.asksaveasfilename(
             title="Choose location for .desktop file",
             defaultextension=".desktop",
             filetypes=[("Desktop Entry Files", "*.desktop"),
                        ("All Files", "*.*")],
+            initialdir=default_dir,
             initialfile=f"{self._slugify(self._string_value('name', 'desktop-entry'))}.desktop",
         )
 
