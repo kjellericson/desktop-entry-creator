@@ -16,26 +16,94 @@ class DesktopEntryCreatorApp:
         self.root.minsize(900, 700)
 
         self.variables = {}
+        self.tooltip = None
+        self.field_help = {
+            "name": "The name shown in the application launcher.",
+            "generic_name": "A short generic label for the app type.",
+            "comment": "A one-line description shown by the desktop environment.",
+            "exec": "The command to run when launching the app.",
+            "icon": "The icon name or full path to use for the launcher.",
+            "path": "The working directory for the application as a filesystem path.",
+            "working_dir": "The directory the app should run from when launched.",
+            "categories": "Semicolon-separated desktop categories such as Utility;Development;.",
+            "keywords": "Search keywords separated by semicolons.",
+            "startup_wm_class": "WM_CLASS value used to group the app window.",
+            "mime_type": "MIME types the app can open, if applicable.",
+            "try_exec": "Optional executable that must exist before launch.",
+            "version": "Version string for the launcher metadata.",
+            "terminal": "Open the program in a terminal window instead of the desktop session.",
+            "startup_notify": "Ask the desktop environment to show launch feedback.",
+            "type": "Desktop entry type: Application, Link, or Directory.",
+        }
         self._build_ui()
         self._seed_example()
         self._refresh_preview()
 
+    def _show_tooltip(self, event, text):
+        if self.tooltip is not None:
+            self._hide_tooltip()
+
+        self.tooltip = tk.Toplevel(self.root)
+        self.tooltip.withdraw()
+        self.tooltip.overrideredirect(True)
+        self.tooltip.attributes("-topmost", True)
+        self.tooltip.geometry(f"+{event.x_root + 18}+{event.y_root + 18}")
+
+        label = tk.Label(
+            self.tooltip,
+            text=text,
+            justify="left",
+            background="#fff9c4",
+            relief="solid",
+            borderwidth=1,
+            padx=8,
+            pady=5,
+            wraplength=260,
+        )
+        label.pack()
+        self.tooltip.deiconify()
+
+    def _hide_tooltip(self, event=None):
+        if self.tooltip is not None:
+            self.tooltip.destroy()
+            self.tooltip = None
+
+    def _attach_tooltip(self, widget, text):
+        widget.bind("<Enter>", lambda event: self._show_tooltip(event, text))
+        widget.bind("<Leave>", self._hide_tooltip)
+
     def _add_field(self, parent, row, label, key, default="", width=36):
+        help_text = self.field_help.get(key, "Information about this field.")
+
+        question = ttk.Label(parent, text="?", foreground="#2b6cb0",
+                             font=("TkDefaultFont", 10, "bold"))
+        question.grid(row=row, column=0, sticky="w", padx=(10, 4), pady=(8, 4))
+        self._attach_tooltip(question, help_text)
+
         label_widget = ttk.Label(parent, text=f"{label}:")
-        label_widget.grid(row=row, column=0, sticky="w",
-                          padx=(10, 8), pady=(8, 4))
+        label_widget.grid(row=row, column=1, sticky="w",
+                          padx=(0, 8), pady=(8, 4))
+        self._attach_tooltip(label_widget, help_text)
 
         var = tk.StringVar(value=default)
         entry = ttk.Entry(parent, textvariable=var, width=width)
-        entry.grid(row=row, column=1, sticky="ew", padx=(0, 10), pady=(8, 4))
+        entry.grid(row=row, column=2, sticky="ew", padx=(0, 10), pady=(8, 4))
 
         self.variables[key] = var
         return var
 
     def _add_checkbox(self, parent, row, label, key, default=False):
+        help_text = self.field_help.get(key, "Information about this field.")
+
+        question = ttk.Label(parent, text="?", foreground="#2b6cb0",
+                             font=("TkDefaultFont", 10, "bold"))
+        question.grid(row=row, column=0, sticky="w", padx=(10, 4), pady=(8, 4))
+        self._attach_tooltip(question, help_text)
+
         var = tk.BooleanVar(value=default)
         checkbox = ttk.Checkbutton(parent, text=label, variable=var)
         checkbox.grid(row=row, column=1, sticky="w", padx=(0, 10), pady=(8, 4))
+        self._attach_tooltip(checkbox, help_text)
         self.variables[key] = var
         return var
 
@@ -47,7 +115,7 @@ class DesktopEntryCreatorApp:
 
         form = ttk.LabelFrame(main, text="Launcher details", padding=12)
         form.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=(0, 12))
-        form.columnconfigure(1, weight=1)
+        form.columnconfigure(2, weight=1)
 
         self._add_field(form, 0, "Name", "name", "My App")
         self._add_field(form, 1, "Generic Name", "generic_name", "Application")
@@ -71,10 +139,16 @@ class DesktopEntryCreatorApp:
         self._add_checkbox(form, 14, "Startup Notify", "startup_notify", True)
 
         dropdown_frame = ttk.Frame(form)
-        dropdown_frame.grid(row=15, column=1, sticky="ew",
+        dropdown_frame.grid(row=15, column=2, sticky="ew",
                             padx=(0, 10), pady=(8, 4))
-        ttk.Label(form, text="Type:").grid(row=15, column=0,
-                                           sticky="w", padx=(10, 8), pady=(8, 4))
+
+        question = ttk.Label(form, text="?", foreground="#2b6cb0",
+                             font=("TkDefaultFont", 10, "bold"))
+        question.grid(row=15, column=0, sticky="w", padx=(10, 4), pady=(8, 4))
+        self._attach_tooltip(question, self.field_help["type"])
+
+        ttk.Label(form, text="Type:").grid(row=15, column=1,
+                                           sticky="w", padx=(0, 8), pady=(8, 4))
         self.type_var = tk.StringVar(value="Application")
         ttk.Combobox(
             dropdown_frame,
