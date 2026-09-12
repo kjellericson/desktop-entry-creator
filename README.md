@@ -1,4 +1,4 @@
-# desktop-entry-creator
+# Desktop Entry Creator
 
 A small Python GUI app for creating `.desktop` launcher files for Linux desktops.
 
@@ -21,3 +21,8 @@ Or directly:
 ```bash
 python3 desktop_entry_creator.py
 ```
+
+Or create a desktop file for it.
+
+## Screendump
+![alt text](screendump.png)

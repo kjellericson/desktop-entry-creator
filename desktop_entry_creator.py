@@ -9,7 +9,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 import tkinter as tk
 
-APP_ICON_PATH = Path(__file__).with_name("app_icon.png")
+APP_ICON_PATH = Path(__file__).with_name("desktop-entry-creator-icon.png")
 ICON_DISPLAY_SIZE = 128
 
 
