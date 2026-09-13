@@ -533,6 +533,18 @@ class DesktopEntryCreatorApp:
         self.variables["terminal"].set(False)
         self.variables["startup_notify"].set(True)
 
+    def _apply_command_line_argument(self, argument):
+        if not argument:
+            return
+
+        file_path = os.path.abspath(os.path.expanduser(argument))
+        name = Path(file_path).stem or Path(file_path).name
+
+        if "exec" in self.variables:
+            self.variables["exec"].set(file_path)
+        if "name" in self.variables:
+            self.variables["name"].set(name)
+
     def _reset_form(self):
         for key, variable in self.variables.items():
             if isinstance(variable, tk.StringVar):
@@ -1305,6 +1317,9 @@ class DesktopEntryCreatorApp:
 def main():
     root = tk.Tk()
     app = DesktopEntryCreatorApp(root)
+    if len(sys.argv) > 1:
+        app._apply_command_line_argument(sys.argv[1])
+        app._refresh_preview()
     root.mainloop()
 
 

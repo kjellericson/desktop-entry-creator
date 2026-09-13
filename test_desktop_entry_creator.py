@@ -42,6 +42,28 @@ class DesktopEntryCreatorTests(unittest.TestCase):
         self.assertIn("StartupNotify=true", result)
         self.assertEqual(result.count("Path="), 1)
 
+    def test_cli_argument_populates_exec_and_name(self):
+        class Var:
+            def __init__(self, value=""):
+                self._value = value
+
+            def set(self, value):
+                self._value = value
+
+            def get(self):
+                return self._value
+
+        app = DesktopEntryCreatorApp.__new__(DesktopEntryCreatorApp)
+        app.variables = {
+            "name": Var(),
+            "exec": Var(),
+        }
+
+        app._apply_command_line_argument("/tmp/demo-app")
+
+        self.assertEqual(app.variables["exec"].get(), "/tmp/demo-app")
+        self.assertEqual(app.variables["name"].get(), "demo-app")
+
     def test_applies_desktop_content_to_form_fields(self):
         class Var:
             def __init__(self, value=""):
