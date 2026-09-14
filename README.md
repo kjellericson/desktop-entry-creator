@@ -11,7 +11,11 @@ A small Python GUI app for creating `.desktop` launcher files for Linux desktops
 - Generate an icon file with one click and save it next to the chosen `.desktop` file
 - Tested on Ubuntu
 
-## Run it
+## Install
+
+Download repo files. Start `desktop_entry_creator` and create a desktop entry to it using the icon that is part of the files· 
+
+## Developing or run it manually
 
 ```bash
 ./desktop-entry-creator
@@ -23,7 +27,7 @@ Or directly:
 python3 desktop_entry_creator.py
 ```
 
-Or create a desktop file for it.
+You can also specify a filename as argument that will be the exec-suggestion for a desktop file (nice when starting from command line).
 
 ## Screendump
 ![alt text](screendump.png)
